@@ -2,5 +2,7 @@ High Reward Web Remake
 Original game names, story and art belong to their respective rights holders.
 High-resolution art is a derivative reconstruction generated from the supplied reference artwork.
 Generation does not establish rights ownership or a distribution license.
-This site contains the native JavaScript development version and no DOS executables or game archives.
-Game formulas and story reconstruction remain incomplete.
+This site contains the native JavaScript reconstruction and no DOS executables or game archives.
+Original campaign rules execute through a restricted JavaScript instruction model; battle rules have an independently tested native port.
+Browser interface, redraws, timing and synthesized audio are presentation adaptations.
+Differential and UI checks cover documented cases, not every possible campaign history.

@@ -2,6 +2,9 @@
 (function(){
   'use strict';
   const shapes={
+    tank:'<path fill="#516d5c" d="M7 33h46l6 12H4zM20 22h24v13H17z"/><path fill="#bcae77" d="M32 24h27v5H32z"/><rect fill="#353e37" x="5" y="43" width="54" height="13" rx="6"/><path stroke="#b5b9a1" d="M13 49h38"/><circle fill="#c2b78c" cx="14" cy="49" r="4"/><circle fill="#c2b78c" cx="31" cy="49" r="4"/><circle fill="#c2b78c" cx="49" cy="49" r="4"/>',
+    plane:'<path fill="#c5cbb9" d="m30 5 5 1 3 21 22 12v7l-23-6-1 12 8 5v4l-12-3-12 3v-4l8-5-1-12-23 6v-7l22-12z"/><path stroke="#86643d" d="M32 9v43M9 40l17-6m12 0 17 6"/>',
+    ferry:'<path fill="#826343" d="M6 40h52L48 55H17z"/><path fill="#d8c38d" d="M13 24h36v17H13z"/><path fill="#618477" d="M20 15h22v11H20z"/><path stroke="#b9d4c0" d="M6 59q7-5 14 0t14 0 14 0 13 0"/><path stroke="#d8c38d" d="M31 6v9"/>',
     castle:'<path fill="#777b70" d="M9 25h46v30H9z"/><path fill="#c3b99a" d="M5 17h14v38H5zm40 0h14v38H45z"/><path fill="#ddd0aa" d="M5 12h5v8h4v-8h5v14H5zm40 0h5v8h4v-8h5v14H45zM24 22h16v33H24z"/><path fill="#563f28" d="M26 55V42a6 6 0 0 1 12 0v13"/><path fill="#9e4740" d="M32 5v14h14l-6-6 6-5H32"/><path d="M32 4v18M10 31v6m44-6v6"/>',
     sword:'<path fill="#c9d7c3" d="m15 45 8 5 30-34 1-12-12 4z"/><path fill="#eef4dc" d="M47 11 20 44l4 2 26-32z"/><path fill="#cba65b" d="m10 40 18 15 5-6-18-15z"/><path fill="#86533a" d="m9 48 8 7-5 6-8-7z"/><path d="m9 48 8 7"/>',
     scroll:'<path fill="#af8d4f" d="M12 7h37v47H12z"/><path fill="#e6d19a" d="M18 10h33v37H18z"/><path fill="#f4e0ac" d="M11 6h36a6 6 0 0 1 6 6H17a6 6 0 0 0-6-6Zm7 41h35a6 6 0 0 1-6 11H16a6 6 0 1 1 1-12"/><path d="M25 22h18M25 29h18M25 36h11"/><circle fill="#9b4434" cx="41" cy="45" r="7"/>',
@@ -18,6 +21,7 @@
     people:'<path fill="#9db08f" d="M4 52V39c0-12 24-12 24 0v13zm31 0V39c0-12 25-12 25 0v13z"/><circle fill="#dfbd89" cx="16" cy="21" r="10"/><circle fill="#e5c396" cx="47" cy="21" r="10"/><path fill="#bb9c63" d="M18 59V40c0-15 28-15 28 0v19z"/><circle fill="#ecd3a8" cx="32" cy="22" r="12"/>',
     flag:'<path fill="#aa4c3e" d="M15 7h39l-8 13 8 13H15z"/><path stroke="#d7bc7b" stroke-width="4" d="M13 5v54M5 59h18"/><path stroke="#e2ba73" d="m26 13 7 6-7 6"/>',
     pause:'<path fill="#d9c18a" d="M16 12h10v40H16zm22 0h10v40H38z"/>',
+    music:'<path fill="#bca56c" d="M25 10v36a9 9 0 1 1-5-8V14l33-8v33a9 9 0 1 1-5-8V16z"/>',
     play:'<path fill="#d9c18a" d="m19 10 33 22-33 22z"/>',
     stop:'<path fill="#b8705b" d="M14 14h36v36H14z"/>',
     save:'<path fill="#6d8b79" d="M9 6h39l9 10v42H9z"/><path fill="#d5c39a" d="M18 6h26v19H18zm0 31h30v21H18z"/><path d="M37 10v10M24 44h17m-17 6h17"/>',

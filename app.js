@@ -6,20 +6,33 @@
   const icon=window.HRUI.icon;
   const redraw=window.HR_REDRAWN||{assets:[],reviewed:0,total:595,complete:false};
   D.assets.push(...redraw.assets);
-  const KEY='highreward.native.v2',LEGACY_KEY='highreward.native.v1',PREF='highreward.preferences.v1';
+  const KEY='highreward.native.v3',LEGACY_KEYS=['highreward.native.v2','highreward.native.v1'],PREF='highreward.preferences.v1';
   let prefs={theme:'hd',welcome:false};try{prefs={...prefs,...JSON.parse(localStorage.getItem(PREF)||'{}')};}catch{}
   if(!prefs.artworkVersion){prefs.theme='redrawn';prefs.artworkVersion=3;try{localStorage.setItem(PREF,JSON.stringify(prefs));}catch{}}
   if(window.HR_RELEASE?.online||!['hd','hd-ai','redrawn'].includes(prefs.theme))prefs.theme='redrawn';
   document.body.dataset.artwork=prefs.theme;
-  let state;try{const saved=localStorage.getItem(KEY)??localStorage.getItem(LEGACY_KEY);state=E.validateSave(JSON.parse(saved||'null'),D);}catch{state=E.newGame(D);}
+  let state;try{const saved=localStorage.getItem(KEY);state=E.validateSave(JSON.parse(saved||'null'),D);}catch{state=E.newGame(D);}
   try{if(!localStorage.getItem(KEY))localStorage.setItem(KEY,JSON.stringify(state));}catch{}
-  let ui={view:'command',tab:'city',selected:0,base:state.squads[0].at,speed:0,archive:'characters',limit:48,query:'',routes:false,zoom:1,panX:0,panY:0,hover:null,facility:'roster',recruit:6,item:0,member:0};
-  let battle=null,battleElapsed=0,autoBattle=true,modalKind='',toastTimer,saveUnavailable=false;
+  const initialSquad=state.activeBattle?.squad??state.selectedSquad??0;
+  let ui={view:'command',tab:'city',selected:initialSquad,base:state.squads[initialSquad].at,speed:0,archive:'characters',limit:48,query:'',routes:false,zoom:1,panX:0,panY:0,hover:null,facility:'roster',recruit:6,item:0,member:0};
+  let battle=E.restoreOriginalBattle(state),battleElapsed=0,autoBattle=true,modalKind='',toastTimer,saveUnavailable=false;
+  let worldWorker=null,worldPending=false,worldGeneration=0;
+  function invalidateWorld(){worldGeneration++;}
+  function requestWorld(ticks){
+    if(worldPending)return;
+    if(!worldWorker){
+      worldWorker=new Worker('world-worker.js?v=0.5.0');
+      worldWorker.onmessage=({data})=>{worldPending=false;if(data.generation!==worldGeneration)return;if(data.error){ui.speed=0;toast('世界運算已暫停：'+data.error);render();return;}const previousBase=state.squads[ui.selected].at;state=data.state;if(!ui.point&&ui.base===previousBase&&state.squads[ui.selected].at!==previousBase)ui.base=state.squads[ui.selected].at;render();if(state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type)){save(true);renderStory();}};
+      worldWorker.onerror=()=>{worldPending=false;ui.speed=0;worldWorker.terminate();worldWorker=null;toast('背景運算載入失敗，請重新整理後繼續。');render();};
+    }
+    worldPending=true;worldWorker.postMessage({state,generation:worldGeneration,ticks});
+  }
   const imageCache=new Map(),assetMap=new Map();
   for(const a of D.assets)for(const id of a.id.split(';'))assetMap.set(a.theme+':'+id,a);
   function asset(id){return assetMap.get(prefs.theme+':'+id)||assetMap.get('hd:'+id);}
   function url(id){return asset(id)?.url||'';}
   function portrait(i){return url('FACE.MRG:'+i)||url('FACE.MRG:0');}
+  function baseVisible(b){return state.mode!=='native-original'||state.world?.bases[b.index]?.kind!==5;}
   function img(id,cls='',alt=''){const u=url(id);return u?`<img src="${esc(u)}" class="${cls}" alt="${esc(alt)}" loading="lazy">`:'';}
   function sprite(id,alt=''){
     const a=asset(id);if(!a)return '';
@@ -30,26 +43,131 @@
   function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3500);}
   function save(silent=false){try{localStorage.setItem(KEY,JSON.stringify(state));if(!silent)toast('已儲存在此瀏覽器。');}catch{saveUnavailable=true;if(!silent)toast('瀏覽器無法儲存，請使用匯出存檔。');}}
   function savePrefs(){try{localStorage.setItem(PREF,JSON.stringify(prefs));}catch{}}
+  function legacyBackup(){try{for(const key of LEGACY_KEYS){const raw=localStorage.getItem(key);if(raw)return raw;}}catch{}return null;}
+  function exportLegacy(){const raw=legacyBackup();if(!raw){toast('沒有舊版試作存檔');return;}const blob=new Blob([raw],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='highreward-v0.4-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   function squad(){return state.squads[ui.selected];}
-  const status=q=>q.order==='move'?'行軍中':q.order==='rest'?'休息中':'待命';
-  const place=q=>E.atBase(q)?D.bases[q.at].name:q.order==='move'?'前往'+D.bases[q.route[0]].name:'野外待命';
-  function itemStats(item){const s=item.recoveredStats;if(!s)return '';return `<div class="item-stats"><span>${icon('sword')}威力<strong>${s.power}</strong></span><span>${icon('shield')}防護<strong>${s.protection}</strong></span>${item.equipmentSlot==='weapon'?`<span>${icon('clock')}射速係數<strong>${s.parameter39}</strong></span>`:''}</div><small class="stat-source">原檔數值 · 傷害換算仍為重製暫定</small>`;}
-  function act(action){try{E.command(state,D,{squad:ui.selected,...action});save(true);render();return true;}catch(e){toast(e.message);return false;}}
+  const status=q=>q.originalOrder===undefined?(q.order==='move'?'行軍中':q.order==='rest'?'休息中':'待命'):({0:'行軍中',1:'退卻中',2:['駐留','公演中','施工中','商賣中','潛入中'][q.subtype||0],3:'休息中',4:'待機',5:'攻擊中',6:'偵察中',9:'執行任務'})[q.originalOrder]||'執行任務';
+  const place=q=>E.atBase(q)?D.bases[q.at].name:q.order==='move'?'前往'+(q.route.length?D.bases[q.route[0]].name:`${q.targetX}，${q.targetY}`):'野外待命';
+  function itemStats(item){const s=item.recoveredStats;if(!s)return '';return `<div class="item-stats"><span>${icon('sword')}威力<strong>${s.power}</strong></span><span>${icon('shield')}防護<strong>${s.protection}</strong></span>${item.equipmentSlot==='weapon'?`<span>${icon('clock')}射速係數<strong>${s.parameter39}</strong></span>`:''}</div><small class="stat-source">${state.mode==='native-original'?'原作裝備數值 · 實際傷害受能力、命中與防禦影響':'原檔數值 · 傷害換算仍為重製暫定'}</small>`;}
+  function act(action){try{E.command(state,D,{squad:ui.selected,...action});save(true);render();if(state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type)){renderStory();return false;}return true;}catch(e){toast(e.message);return false;}}
   function graphicButton(action,art,label,extra='',kind=''){
     return `<button class="graphic-action ${kind}" data-action="${action}" aria-label="${esc(label)}" title="${esc(label)}" ${extra}>${icon(art)}<span>${esc(label)}</span></button>`;
   }
   function facilityButton(key,art,label,disabled=false){
     return `<button class="facility-tile" data-facility="${key}" title="${esc(disabled?'先讓部隊抵達此處':label)}" aria-label="${esc(label)}" ${disabled?'disabled':''}><span class="facility-art">${icon(art)}</span><span>${esc(label)}</span></button>`;
   }
+  const storyIcon=label=>/軍事|戰|攻|武器/.test(label)?'sword':/醫|病|回復/.test(label)?'heal':/酒店|酒館|傭兵|招募/.test(label)?'tavern':/商店|兵器|裝備/.test(label)?'forge':/金|銀行|支付|償還|薪|買|賣/.test(label)?'coin':/拒|不|結束|返回|離/.test(label)?'back':/民事|委託|佈告|情報/.test(label)?'scroll':/渡|船/.test(label)?'ferry':'book';
+  function sourceTownActions(){if(state.mode==='native-original'&&!E.atBase(squad()))return [];try{return E.townActions(state,D,ui.selected).actions;}catch(e){return [];}}
+  function townActionCards(filter=()=>true){
+    return sourceTownActions().map((a,index)=>({...a,index})).filter(filter).map(a=>`<button class="facility-tile" data-original-town="${a.index}" aria-label="${esc(a.label.trim())}" title="${esc(a.label.trim())}"><span class="facility-art">${icon(storyIcon(a.label))}</span><span>${esc(a.label.trim())}</span></button>`).join('');
+  }
+  function beginStory(request){try{E.storyEvent(state,D,request);save(true);render();renderStory();}catch(e){toast(e.message);}}
+  function continueStory(response={}){try{const event=E.storyResume(state,D,response);if(event.type==='complete'&&event.ending?.id==='debtCleared'){state.ending={index:0,campaignBytes:event.ending.campaignBytes||state.originalCampaign,finished:false};save(true);render();showEnding();return;}if(state.story?.event?.type==='complete'&&squad().order==='move')ui.speed=1;save(true);render();renderStory();}catch(e){toast(e.message);}}
+  function showEnding(){
+    if(!state.ending||!window.OriginalEnding)return;
+    const sequence=window.OriginalEnding.buildEndingSequence(state.ending.campaignBytes),index=Math.max(0,Math.min(sequence.stages.length-1,state.ending.index)),stage=sequence.stages[index],credits=stage.id==='credits'||stage.preserveCreditSurface;
+    const title=stage.id==='certificate'?'債務清償':stage.company||stage.id==='company-accounting'&&'傭兵團總帳'||(credits?'製作名單':'傭兵團的未來');
+    if(prefs.music&&stage.musicFile)window.OriginalMusic?.play(stage.musicFile,{loop:credits});
+    const scene=credits?`<div class="ending-credits ${stage.preserveCreditSurface?'ending-credits-finished':''}" style="background-image:url('${esc(url(stage.background||'ED7.GS'))}')">${img('ROLL.GS','ending-roll','原作製作名單')}</div>`:`<div class="ending-illustration">${img(stage.image,'','原作片尾場景')}</div>`;
+    openModal(`<span class="eyebrow">HIGH REWARD · ORIGINAL ENDING ${index+1}/${sequence.stages.length}</span><h2>${esc(title)}</h2><div class="ending-stage ${credits?'credits-stage':''}">${scene}${stage.lines?.length?`<div class="ending-lines">${esc(stage.lines.join('\n'))}</div>`:''}</div><div class="modal-actions">${index?graphicButton('endingPrevious','back','上一幕'):''}${graphicButton(index===sequence.stages.length-1?'endingFinish':'endingNext',index===sequence.stages.length-1?'castle':'arrow',index===sequence.stages.length-1?'返回傭兵團':'下一幕','','primary')}</div>`,'ending');
+  }
+  function renderOriginalShop(e){
+    const options=e.options||[],shop=e.shopState||{},categories=options.filter(o=>o.id>=100&&o.id<104),offers=options.filter(o=>o.offerIndex!==undefined),members=options.filter(o=>o.originalSlot!==undefined),other=options.filter(o=>o.id!==-1&&!categories.includes(o)&&!offers.includes(o)&&!members.includes(o));
+    const offer=offers.map(o=>{const item=D.items.find(x=>x.index===o.itemId),c=D.classes.find(c=>c.index===o.classId),label=o.text||item?.name||c?.name||'商品',art=item?img('ITEM.MRG:'+item.iconIdCandidate,'',label):c?`<img src="${esc(portrait(c.index))}" alt="${esc(label)}">`:icon('bag');return `<button class="native-shop-offer ${shop.selectedOfferIndex===o.offerIndex?'selected':''}" data-story-value="${o.id}">${art}<strong>${esc(label)}</strong>${o.price!==undefined?`<b>${money(o.price)} G</b>`:''}${item?itemStats(item):`<span>等級 ${o.experience??0}</span>`}</button>`;}).join('');
+    const roster=members.map(o=>{const empty=o.classId===-1,raw=o.memberBytes,v=raw?new DataView(Uint8Array.from(raw).buffer):null,eligible=o.transactionEligibility?.eligible;return `<button class="native-shop-member ${eligible===false?'incompatible':''}" data-story-value="${o.id}" aria-label="${esc(o.text||'成員位置 '+(o.originalSlot+1))}" ${eligible===false?'disabled':''}>${empty?icon('people'):`<img src="${esc(portrait(o.classId))}" alt="">`}<strong>${esc(o.text||'空位')}</strong>${v&&!empty?`<small>HP ${v.getInt16(2,true)}/${v.getInt16(4,true)} · LV ${v.getInt16(6,true)}</small>`:'<small>＋</small>'}</button>`;}).join('');
+    openModal(`<span class="eyebrow">HIGH REWARD · EQUIPMENT</span><h2>部隊整備</h2><div class="native-shop-heading"><span>${icon('coin')} ${money(state.money)} G</span><b>${shop.mode===1?'選擇接收商品的成員':shop.mode===2?'選擇要出售的裝備':'選擇商品或成員'}</b>${shop.mode?`<strong>${shop.mode===2?'售價':'交易價'} ${money(shop.transactionPrice||0)} G</strong>`:''}</div><div class="native-shop-categories">${categories.map(o=>`<button data-story-value="${o.id}" class="${shop.selectedCategory===o.category?'selected':''}">${icon(storyIcon(o.text))}<span>${esc(o.text)}</span></button>`).join('')}</div><div class="native-shop-layout"><div class="native-shop-offers">${offer}</div><div class="native-shop-roster">${roster}</div></div><div class="native-shop-footer">${other.map(o=>`<button class="story-choice" data-story-value="${o.id}">${icon(storyIcon(o.text))}<span>${esc(o.text)}</span></button>`).join('')}<button class="story-choice" data-story-value="-1">${icon('back')}<span>${shop.mode?'取消選取':'離開商店'}</span></button></div>`,'story');
+  }
+  function renderStory(){
+    const e=state.story?.event;if(!e||['complete','tick-complete'].includes(e.type)){if(modalKind==='story'){modal.close();modalKind='';}return;}
+    if(e.type==='battle'){
+      if(!battle||battle.storyEventKey!==state.activeBattle?.storyEventKey){
+        try{battle=E.restoreOriginalBattle(state);battleElapsed=0;autoBattle=true;save(true);}catch(error){toast(error.message);return;}
+      }openModal('','battle');renderBattle();return;
+    }
+    if(e.name==='shop.grid'){renderOriginalShop(e);return;}
+    const speaker=e.title||state.story.speaker||'傭兵團',face=state.story.speakerFace,faceImage=Number.isInteger(face)&&asset('FACE.MRG:'+face)?`<img class="story-portrait" src="${esc(portrait(face))}" alt="${esc(speaker)}">`:`<span class="story-portrait story-silhouette">${icon('people')}</span>`;
+    const choices=e.options||[],history=state.story.history.slice(-4),options=choices.map(o=>{
+      const label=o.text??(o.classId===-1?'空位 '+(o.id+1):'替換 '+(D.classes.find(c=>c.index===o.classId)?.name||'成員')+' · 位置 '+(o.id+1));
+      return `<button class="story-choice" data-story-value="${o.id}" ${e.type==='selection'&&o.classId!==-1?'data-story-replace="true"':''}>${icon(storyIcon(label))}<span>${esc(label)}</span></button>`;
+    }).join('');
+    let controls=options;
+    if(e.cancelValues?.includes(-1)&&!choices.some(o=>o.id===-1))controls+='<button class="story-choice" data-story-value="-1">'+icon('back')+'<span>返回</span></button>';
+    if(['text','ending','quit'].includes(e.type))controls=graphicButton('storyNext','arrow',e.type==='quit'?'結束流程':'繼續','','primary');
+    else if(e.type==='selection')controls+=`<button class="story-choice" data-story-value="65535">${icon('back')}<span>取消選擇</span></button>`;
+    else if(e.type==='unresolved')controls='<p class="source">此原作流程尚有未接入的呼叫，已保留目前進度。</p>';
+    openModal(`<span class="eyebrow">HIGH REWARD · ORIGINAL STORY</span><div class="story-stage">${img('MAP'+String((D.bases[squad().at].countryIndexCandidate??0)+1).padStart(2,'0')+'.PXZ','story-background','所在地景象')}${faceImage}<div class="story-speaker">${esc(e.title||speaker)}</div></div><div class="story-text">${esc(e.lines?.join('\n')||e.text||(['menu.choose','menu.window','vehicle.shop'].includes(e.name)?'請選擇行動。':history[history.length-1]?.text)||'請選擇行動。')}</div><div class="story-choices">${controls}</div>`,'story');
+  }
+  function nativeDesk(){
+    const q=squad();if(ui.tab==='missions')return `<div class="visual-heading">${icon('scroll')}<h3>原作委託</h3></div><div class="facility-grid">${townActionCards(a=>[65,66,67].includes(a.id))}</div>`;
+    return `<div class="visual-heading">${icon('chest')}<h3>傭兵團金庫</h3></div><div class="treasury-art">${icon('chest')}${icon('coin')}${icon('bag')}</div><div class="treasury-stats"><div><span>資金</span><strong>${money(state.money)}</strong></div><div><span>債務</span><strong>${money(state.debt)}</strong></div></div>${state.ending?graphicButton('endingReplay','book','重看片尾','','primary'):graphicButton('originalBank','coin','雷奇法魯銀行','','primary')}<p>每週最低還款 ${money(state.minimumRepayment||5000)} G</p>`;
+  }
+  function nativeTasks(q){
+    if(state.mode!=='native-original'||!window.OriginalContracts)return '';
+    const decoded=window.OriginalContracts.decodeNativeTask(state.originalCampaign,window.OriginalStoryBridge.unitBytes(q,D),q.id);
+    return decoded.tasks.map(task=>`<article class="native-task"><span>${icon('scroll')}</span><div><strong>${esc(task.title||task.name||task.kind)}</strong>${task.destinationName||task.targetName?`<p>${esc(task.destinationName||task.targetName)}</p>`:''}${task.remainingDays!==undefined&&task.remainingDays!==null?`<small>期限剩餘 ${task.remainingDays} 日</small>`:''}${task.currentDurability!==undefined?`<small>據點耐久 ${task.currentDurability} / ${task.targetDurability}</small>`:''}${task.reward!==null&&task.reward!==undefined?`<b>${money(task.reward)} G</b>`:task.kind==='performance'?'<small>依演出結果結算</small>':''}</div></article>`).join('');
+  }
+  function showMember(slot){const m=squad().members.find((m,i)=>(m.originalSlot??i)===slot);if(!m)return;openModal(`<div class="modal-hero"><img src="${esc(portrait(m.face))}" alt="${esc(m.name)}"><div><h2>${esc(m.name)}</h2><p>生命 ${m.hp} / ${m.maxHp} · 等級 ${m.level} · 疲勞 ${m.fatigue??0}</p><p>基本攻擊 ${m.attack} · 基本防禦 ${m.defense}</p>${['weapon','armor','consumable'].map(key=>{const item=D.items.find(i=>i.index===m[key]);return `<h3>${{weapon:'武器',armor:'防具',consumable:'持物'}[key]}：${esc(item?.name||'未裝備')}</h3>${item?itemStats(item):''}`;}).join('')}</div></div>`,'member');}
+  function showTransfers(){
+    const q=squad(),peers=state.squads.filter(p=>p.active!==0&&p.originalOrder===2&&(p.currentBase??p.at)===(q.currentBase??q.at));
+    if(!E.atBase(q)||!peers.length){toast('部隊必須駐留據點才能移交');return;}
+    if(!peers.some(p=>p.id===ui.transferTarget))ui.transferTarget=peers.find(p=>p.id!==q.id)?.id??q.id;
+    const target=state.squads[ui.transferTarget],slots=(company,selected)=>Array.from({length:11},(_,slot)=>{const m=company.members.find((m,i)=>(m.originalSlot??i)===slot);return `<option value="${slot}" ${slot===selected?'selected':''}>${slot+1} · ${esc(m?.name||'空位')}</option>`;}).join('');
+    ui.transferFromSlot??=1;ui.transferToSlot??=1;
+    openModal(`<span class="eyebrow">HIGH REWARD · TRANSFER</span><h2>部隊與裝備移交</h2><p>${esc(D.bases[q.at].name)} · 同一據點駐留部隊</p><label class="transfer-label">接收部隊<select id="transferTarget" aria-label="接收部隊">${peers.map(p=>`<option value="${p.id}" ${p.id===target.id?'selected':''}>${esc(p.name)}${p.id===q.id?' · 本隊':''}</option>`).join('')}</select></label><div class="transfer-members"><label class="transfer-label">來源位置<select id="transferFromSlot" aria-label="來源成員位置">${slots(q,ui.transferFromSlot)}</select></label><label class="transfer-label">接收位置<select id="transferToSlot" aria-label="接收成員位置">${slots(target,ui.transferToSlot)}</select></label></div><div class="facility-grid">${[['person','people','移交成員'],['weapon','sword','移交武器'],['armor','shield','移交防具'],['third','bag','移交持物']].map(([kind,art,label])=>`<button class="facility-tile" data-transfer-kind="${kind}"><span class="facility-art">${icon(art)}</span><span>${label}</span></button>`).join('')}</div><div class="transfer-vehicles">${[['tank','tank','移交車輛'],['plane','plane','移交飛機'],['cannon','sword','移交火砲']].map(([kind,art,label])=>`<button class="story-choice" data-transfer-kind="${kind}" ${q.id===target.id||(q[kind+'Id']??-1)<0?'disabled':''}>${icon(art)}<span>${label}</span></button>`).join('')}</div><p>目標已有同類裝備或載具時會交換；隊長的位置與特殊戰車依原作限制保護。</p>`,'transfer');
+  }
+  function showMusic(){
+    const music=window.OriginalMusic,status=music.getState(),tracks=music.list();ui.musicTrack??=tracks.find(t=>!t.empty)?.file;
+    openModal(`<span class="eyebrow">HIGH REWARD · ORIGINAL MUSIC</span><h2>原作音樂</h2><p id="musicStatus">${status.enabled?'音樂已啟用':'音樂已關閉'}</p><label class="transfer-label">曲目<select id="musicTrack" aria-label="原作音樂曲目">${tracks.map(t=>`<option value="${esc(t.file)}" ${t.file===ui.musicTrack?'selected':''} ${t.empty?'disabled':''}>${esc(t.name||t.file)}${t.empty?' · 原檔空白':''}</option>`).join('')}</select></label><div class="modal-actions">${graphicButton('musicPlay','play','播放所選音樂','','primary')}${graphicButton('musicStop','stop','停止播放')}${graphicButton('musicToggle','music',status.enabled?'關閉音樂':'開啟音樂')}</div><p class="source">27 首原作 MIDI 旋律與節奏，由瀏覽器近似音色合成。片尾使用原作指定曲目。</p>`,'music');
+  }
+  async function playMusic(){try{await window.OriginalMusic.toggle(true);await window.OriginalMusic.play(ui.musicTrack);prefs.music=true;savePrefs();showMusic();$('#musicStatus').textContent='播放中：'+ui.musicTrack;}catch(e){toast('音樂無法播放：'+e.message);}}
+  async function toggleMusic(){try{await window.OriginalMusic.toggle();prefs.music=window.OriginalMusic.getState().enabled;savePrefs();showMusic();}catch(e){toast(e.message);}}
+  function resumeScene(){
+    if(state.ending&&!state.ending.finished){showEnding();return;}
+    if(state.mode==='native-original'&&state.story?.pendingOpeningEvents&&(!state.story.event||state.story.event.type==='complete')){E.step(state,D,1);save(true);}
+    if(state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type))renderStory();
+  }
+  function vehiclePanel(q,here){
+    const t=D.original?.transport;if(!t)return '';
+    const kinds={tank:['tank','車輛'],plane:['plane','飛機'],cannon:['sword','火砲']};
+    const owned=Object.entries(kinds).map(([kind,[art,label]])=>{const v=t.vehicles.find(v=>v.kind===kind&&v.typeId===q[kind+'Id']);return `<div class="vehicle-owned">${icon(art)}<span>${label}<strong>${v?esc(v.name):'未配置'}</strong></span>${v&&kind!=='cannon'?`<b>${q[kind+'Durability']??0} / ${v.maxDurability}</b>`:''}</div>`;}).join('');
+    const shops=E.vehiclesAt(D,q.at).map(shop=>{const v=t.vehicles.find(v=>v.kind===shop.kind&&v.typeId===shop.typeId),quote=window.OriginalTransport.tradeQuote(E.transportUnit(q,D),t.vehicles,shop.kind,shop.typeId,state.storyByte20??0),old=t.vehicles.find(v=>v.kind===shop.kind&&v.typeId===q[shop.kind+'Id']);return `<article class="vehicle-shop">${img('ITEM.MRG:'+D.items[v.itemId].iconIdCandidate,'',v.name)}<div><small>${esc(shop.name)}</small><strong>${esc(v.name)}</strong><span>耐久 ${v.maxDurability} · 威力 ${v.attack} · 防護 ${v.defense}</span><b>${quote.cost<0?'換購可取回':'換購價'} ${money(Math.abs(quote.cost??0))} G</b>${old?`<small>舊載具折抵 ${money(Math.trunc(old.price/2))} G</small>`:''}</div><button data-vehicle-buy="${shop.slot}" aria-label="購入${esc(v.name)}" ${!here?'disabled':''}>${icon('coin')}<span>${state.mode==='native-original'?'前往交易':old?'換購':'購入'}</span></button>${old?`<button data-vehicle-sell="${shop.slot}" aria-label="出售${esc(old.name)}" ${!here||!quote.ok?'disabled':''}>${icon('bag')}<span>出售 ${money(Math.trunc(old.price/2))}</span></button>`:''}</article>`;}).join('');
+    return `<div class="vehicle-hangar">${owned}</div>${shops||'<p class="empty-state">此城鎮沒有原作載具商店。</p>'}`;
+  }
+  function transportControls(q,to){
+    if(!D.original?.transport)return '';
+    const options=E.movementOptions(state,D,q.id,to),labels=window.OriginalTransport.LABELS;
+    if(!options.choices.includes(ui.travelMode??0))ui.travelMode=options.choices[0];
+    const selectable=state.mode==='native-original'?E.commandAvailability(state,D,q.id).move:q.order!=='move';
+    return `<div class="travel-modes" aria-label="交通方式">${[0,1,2].map(mode=>`<button data-travel-mode="${mode}" aria-label="${labels[mode]}" aria-pressed="${(ui.travelMode??0)===mode}" ${!selectable||!options.choices.includes(mode)?'disabled':''}>${icon(['move','tank','plane'][mode])}<span>${labels[mode]}</span></button>`).join('')}</div>`;
+  }
+  function worldOrders(q,to,point=null){
+    const p=E.commandAvailability(state,D,q.id),target=point||D.bases[to],plan=E.routePlan(D,E.position(q,D),target,ui.travelMode??0,state),same=Math.trunc(E.position(q,D).x)===(target.xCandidate??target.x)&&Math.trunc(E.position(q,D).y)===(target.yCandidate??target.y),base=state.world?.bases[to],buttons=[];
+    if(p.move)buttons.push(graphicButton(point?'moveToPoint':'move','move',same?'已在此處':'向此處行軍',same||!plan||state.ended?'disabled':'','primary'));
+    if(p.scout&&base?.kind===2&&!point)buttons.push(graphicButton('scoutBase','map','偵察據點',state.ended?'disabled':''));
+    if(p.standby)buttons.push(graphicButton('stop','stop','待機',state.ended?'disabled':''));
+    if(p.rest)buttons.push(graphicButton('rest','camp','野外休息',state.ended?'disabled':''));
+    if(p.enterBase)buttons.push(graphicButton('enterBase','castle','進入附近據點',state.ended?'disabled':''));
+    if(p.occupy)buttons.push(graphicButton('occupy','flag','占領',state.ended?'disabled':''));
+    if(p.attackSettings)buttons.push(graphicButton('attackSettings','sword','攻擊方式',state.ended?'disabled':''));
+    if(p.retreat)buttons.push(graphicButton('retreatTravel','back','退卻',state.ended?'disabled':''));
+    if(E.atBase(q))buttons.push(graphicButton('recoverInTown','camp','駐留回復',state.ended?'disabled':''));
+    if(E.atBase(q)&&[27,28].includes(q.at))buttons.push(graphicButton('ferry','ferry','搭乘渡船',state.ended?'disabled':''));
+    buttons.push(graphicButton('troops','people','部隊報告'));
+    return `<div class="map-orders native-world-orders">${buttons.join('')}</div>`;
+  }
+  function pointDesk(q){
+    const p=ui.point,country=E.countryAt(state,p.x,p.y),c=D.countries[country],background=c?'MAP'+String(country+1).padStart(2,'0')+'.PXZ':'GMAP.PXZ:0';
+    return `<div class="location-panorama">${img(background,'','原作地圖')}<div class="location-caption"><small>${esc(c?.name||'大陸野外')}</small><h3>地圖座標 ${p.x}，${p.y}</h3></div></div>${transportControls(q,p)}${worldOrders(q,null,p)}<div class="travel-status">${icon('map')}<span>${esc(place(q))}</span></div>${nativeTasks(q)}<button class="rules-link" data-action="currentLocation">查看目前據點</button>`;
+  }
   function render(){
-    $('#money').textContent=money(state.money);$('#debt').textContent=money(state.debt);$('#date').textContent=`${String(state.day).padStart(3,'0')}日 · ${String(state.hour).padStart(2,'0')}:00`;
+    $('#money').textContent=money(state.money);$('#debt').textContent=money(state.debt);$('#date').textContent=state.calendar?`${state.calendar.year} 年 ${state.calendar.month} 月 ${state.calendar.day} 日 · ${String(state.hour).padStart(2,'0')}時`:`${String(state.day).padStart(3,'0')}日 · ${String(state.hour).padStart(2,'0')}:00`;
     $$('#speeds button').forEach(b=>{b.classList.toggle('selected',+b.dataset.speed===ui.speed);b.setAttribute('aria-pressed',String(+b.dataset.speed===ui.speed));});
     $('#squads').innerHTML=state.squads.map((q,i)=>{
       const hp=q.members.reduce((n,m)=>n+m.hp,0),max=q.members.reduce((n,m)=>n+m.maxHp,0);
-      return `<button class="squad-card ${i===ui.selected?'active':''} ${q.order==='move'?'marching':''}" data-squad="${i}" aria-pressed="${i===ui.selected}" aria-label="第${i+1}隊 ${esc(q.leader)}" title="${esc(q.name)} · ${esc(place(q))} · ${status(q)}"><span class="portrait"><span class="sq-index">${['Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ','Ⅵ'][i]}</span><img src="${esc(portrait(i))}" alt="${esc(q.leader)}頭像候選"><span class="sq-state">${icon(q.order==='move'?'move':q.order==='rest'?'camp':'shield')}</span></span><span class="sq-info"><strong>${esc(q.leader)}</strong><span class="unit-bars"><span class="hp-bar" title="生命 ${Math.round(hp/max*100)}%"><i style="width:${hp/max*100}%"></i></span><span class="stamina-bar" title="體力 ${Math.round(q.stamina)}%"><i style="width:${q.stamina}%"></i></span></span><small>${esc(place(q))}</small></span><span class="unit-count">${q.members.length}</span></button>`;
+      return `<button class="squad-card ${i===ui.selected?'active':''} ${q.order==='move'?'marching':''}" data-squad="${i}" aria-pressed="${i===ui.selected}" aria-label="第${i+1}隊 ${esc(q.leader)}" title="${esc(q.name)} · ${esc(place(q))} · ${status(q)}"><span class="portrait"><span class="sq-index">${['Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ','Ⅵ'][i]}</span><img src="${esc(portrait(i))}" alt="${esc(q.leader)}頭像"><span class="sq-state">${icon(q.order==='move'?'move':q.order==='rest'?'camp':'shield')}</span></span><span class="sq-info"><strong>${esc(q.leader)}</strong><span class="unit-bars"><span class="hp-bar" title="生命 ${Math.round(hp/max*100)}%"><i style="width:${hp/max*100}%"></i></span><span class="stamina-bar" title="體力 ${Math.round(q.stamina)}%"><i style="width:${q.stamina}%"></i></span></span><small>${esc(place(q))}</small></span><span class="unit-count">${q.members.length}</span></button>`;
     }).join('');
     const q=squad(),hp=q.members.reduce((n,m)=>n+m.hp,0),max=q.members.reduce((n,m)=>n+m.maxHp,0);
-    $('#selectedSquad').innerHTML=`<div class="commander"><div class="commander-portrait"><img src="${esc(portrait(q.face))}" alt="部隊肖像候選"><b>${['Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ','Ⅵ'][q.id]}</b></div><div class="commander-copy"><small>${esc(q.name)}</small><h3>${esc(q.leader)}</h3><div class="commander-meta"><span title="部隊人數">${icon('people')} ${q.members.length}/11</span><span title="部隊體力">${icon('heart')} ${Math.round(q.stamina)}%</span><b class="order-badge">${status(q)}</b></div><div class="unit-bars"><span class="hp-bar"><i style="width:${hp/max*100}%"></i></span><span class="stamina-bar"><i style="width:${q.stamina}%"></i></span></div></div></div>`;
+    $('#selectedSquad').innerHTML=`<div class="commander"><div class="commander-portrait"><img src="${esc(portrait(q.face))}" alt="部隊肖像"><b>${['Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ','Ⅵ'][q.id]}</b></div><div class="commander-copy"><small>${esc(q.name)}</small><h3>${esc(q.leader)}</h3><div class="commander-meta"><span title="部隊人數">${icon('people')} ${q.members.length}/11</span><span title="部隊體力">${icon('heart')} ${Math.round(q.stamina)}%</span><b class="order-badge">${status(q)}</b></div><div class="unit-bars"><span class="hp-bar"><i style="width:${hp/max*100}%"></i></span><span class="stamina-bar"><i style="width:${q.stamina}%"></i></span></div></div></div>`;
     $$('.tabs button').forEach(b=>b.setAttribute('aria-selected',String(ui.tab===b.dataset.tab)));
     renderDesk();$('#log').innerHTML=state.log.slice(0,30).map(e=>`<div class="log-entry"><time>DAY ${String(e.day).padStart(3,'0')}</time><span>${esc(e.text)}</span></div>`).join('');
     $('#latestReport').textContent=state.log[0]?.text||'等待新的軍情…';
@@ -59,9 +177,12 @@
     const q=squad(),b=D.bases[ui.base],here=E.atBase(q)&&q.at===ui.base&&q.order!=='move';
     const section=(art,title,meta='')=>`<div class="visual-heading">${icon(art)}<h3>${title}</h3>${meta?`<span>${meta}</span>`:''}</div>`;
     let content='';
+    if(state.mode==='native-original'&&ui.point&&ui.tab==='city'){$('#deskContent').innerHTML=pointDesk(q);window.HRUI.decorate();return;}
+    if(state.mode==='native-original'&&['missions','finance'].includes(ui.tab)){$('#deskContent').innerHTML=nativeDesk()+nativeTasks(q);window.HRUI.decorate();return;}
     if(ui.tab==='city'){
-      const ci=b.countryIndexCandidate??0,c=D.countries[ci],p=E.routePlan(D,E.position(q,D),b.index),distance=p?p.cells.length-1:0;
-      content=`<div class="location-panorama">${img('MAP'+String(ci+1).padStart(2,'0')+'.PXZ','',c.name+'原作地圖')}<div class="location-caption"><small>${esc(c.name)}</small><h3>${esc(b.name)}</h3></div><button class="scene-info" data-country="${ci}" aria-label="查看國家介紹" title="查看國家介紹">${icon('book')}</button><span class="scene-stamp">${here?'部隊駐留':'目的地'}</span></div><div class="facility-grid">${facilityButton('board','scroll','委託看板',!here)}${facilityButton('recruit','tavern','酒館招募',!here)}${facilityButton('shop','forge','武器商店',!here)}${facilityButton('clinic','heal','醫院治療',!here)}${facilityButton('camp','camp','紮營休息',!here)}${facilityButton('finance','chest','金庫',!here)}</div><div class="map-orders">${graphicButton('move','move',here?'駐留中':'向此處行軍',here||q.order==='move'||!distance?'disabled':'','primary')}${graphicButton('stop','stop','停止行軍',q.order!=='move'?'disabled':'')}</div><details class="location-picker"><summary>${icon('map')}選擇其他據點<span>⌄</span></summary><select id="baseSelect" aria-label="選擇據點">${D.countries.map(country=>`<optgroup label="${esc(country.name)}">${D.bases.filter(x=>x.countryIndexCandidate===country.index).map(x=>`<option value="${x.index}" ${x.index===b.index?'selected':''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('')}</select></details><div class="travel-status">${icon(q.order==='move'?'move':'flag')}<span>${esc(q.order==='move'?'行軍目的地：'+D.bases[q.route[q.route.length-1]].name:place(q))}</span>${q.order==='move'?`<b>${Math.round(q.progress*100)}%</b>`:`<b>${distance?distance+' 格步行路線':here?'駐留中':'地形或封鎖不可通行'}</b>`}</div>`;
+      const controls=transportControls(q,b.index);
+      const ci=b.countryIndexCandidate??0,c=D.countries[ci],p=E.routePlan(D,E.position(q,D),b.index,ui.travelMode??0,state),distance=p?p.cells.length-1:0;
+      content=`<div class="location-panorama">${img('MAP'+String(ci+1).padStart(2,'0')+'.PXZ','',c.name+'原作地圖')}<div class="location-caption"><small>${esc(c.name)}</small><h3>${esc(b.name)}</h3></div><button class="scene-info" data-country="${ci}" aria-label="查看國家介紹" title="查看國家介紹">${icon('book')}</button><span class="scene-stamp">${here?'部隊駐留':'目的地'}</span></div>${state.mode==='native-original'?`<div class="base-condition">${icon('shield')}<span>據點耐久 <strong>${state.world.bases[b.index].raw1A}</strong></span>${state.world.bases[b.index].kind===3?'<b>要道封鎖中</b>':''}</div>`:''}<div class="facility-grid">${state.mode==='native-original'?(here?townActionCards()+facilityButton('vehicles','tank','載具整備'): '<p class="empty-state">駐留後可查看此處設施。</p>') :facilityButton('board','scroll','委託看板',!here)+facilityButton('recruit','tavern','酒館招募',!here)+facilityButton('shop','forge','武器商店',!here)+facilityButton('clinic','heal','醫院治療',!here)+facilityButton('camp','camp','紮營休息',!here)+facilityButton('finance','chest','金庫',!here)+facilityButton('vehicles','tank','載具商店',!here)}</div>${controls}${state.mode==='native-original'?worldOrders(q,b.index):`<div class="map-orders">${graphicButton('move','move',here?'駐留中':'向此處行軍',here||q.order==='move'||!distance?'disabled':'','primary')}${graphicButton('stop','stop','停止行軍',q.order!=='move'||q.moveMode===2?'disabled':'')}${state.mode==='native-original'&&!E.atBase(q)?graphicButton('enterBase','castle','進入附近據點',window.OriginalTransport.enterBaseCommand(E.transportUnit(q,D),state.world?.bases||D.original.transport.bases).ok?'':'disabled'):''}${state.mode==='native-original'&&q.order==='move'?graphicButton('retreatTravel','back','退卻'):''}${here&&[27,28].includes(q.at)?graphicButton('ferry','ferry','搭乘渡船','','primary'):''}</div>`}<details class="location-picker"><summary>${icon('map')}選擇其他據點<span>⌄</span></summary><select id="baseSelect" aria-label="選擇據點">${D.countries.map(country=>`<optgroup label="${esc(country.name)}">${D.bases.filter(x=>x.countryIndexCandidate===country.index&&baseVisible(x)).map(x=>`<option value="${x.index}" ${x.index===b.index?'selected':''}>${esc(x.name)}</option>`).join('')}</optgroup>`).join('')}</select></details><div class="travel-status">${icon(q.order==='move'?'move':'flag')}<span>${esc(q.order==='move'?'行軍目的地：'+(q.route.length?D.bases[q.route[q.route.length-1]].name:'座標 '+q.targetX+'，'+q.targetY):place(q))}</span>${q.order==='move'?`<b>${q.travel?.original?'移動 '+q.travel.steps+' 次':Math.round(q.progress*100)+'%'}</b>`:`<b>${distance?distance+' 格'+window.OriginalTransport.LABELS[ui.travelMode??0]:here?'駐留中':'目前無可行路線；地形或據點封鎖尚未解除'}</b>`}</div>`;
     }else if(ui.tab==='missions'){
       const active=state.taken.find(m=>m.squad===q.id),base=D.bases[q.at];
       content=section('scroll','委託看板',esc(base.name));
@@ -72,21 +193,23 @@
       if(!active&&!available)content+=`<div class="visual-empty">${icon('scroll')}<p>此處的委託已完成</p><button data-tab="city">前往其他城鎮</button></div>`;
     }else if(ui.tab==='troops'){
       content=`<div class="equipment-tabs" aria-label="整備設施"><button data-facility="roster" class="${ui.facility==='roster'?'selected':''}" title="部隊編制" aria-label="部隊編制">${icon('people')}<span>編制</span></button><button data-facility="recruit" class="${ui.facility==='recruit'?'selected':''}" title="酒館招募" aria-label="酒館招募">${icon('tavern')}<span>招募</span></button><button data-facility="shop" class="${ui.facility==='shop'?'selected':''}" title="武器商店" aria-label="武器商店">${icon('forge')}<span>商店</span></button></div>`;
-      if(ui.facility==='recruit'){
+      if(ui.facility==='vehicles'){content+=section('tank','載具整備',esc(D.bases[q.at].name))+vehiclePanel(q,E.atBase(q)&&q.order!=='move');
+      }else if(ui.facility==='recruit'){
         const recruits=D.classes.filter(c=>c.index>=6&&c.index<25),selected=recruits.find(c=>c.index===ui.recruit)||recruits[0];
-        content+=section('tavern','酒館',q.members.length+'/11')+`<div class="recruit-gallery">${recruits.map(c=>`<button class="recruit-card ${c.index===ui.recruit?'selected':''}" data-recruit="${c.index}" aria-label="選擇${esc(c.name)}" title="${esc(c.name)} · ${money(1200+c.index*70)} G"><img src="${esc(portrait(c.index))}" alt="${esc(c.name)}頭像候選"><strong>${esc(c.name)}</strong><small>${money(1200+c.index*70)} G</small></button>`).join('')}</div><div class="selection-summary"><img src="${esc(portrait(selected.index))}" alt=""><div><strong>${esc(selected.name)}</strong><small>${money(1200+selected.index*70)} G</small></div>${graphicButton('hire','people','雇用至本隊',q.order==='move'||q.members.length>=11||state.money<1200+selected.index*70?'disabled':'','primary')}</div>`;
+        content+=section('tavern','酒館',q.members.length+'/11')+`<div class="recruit-gallery">${recruits.map(c=>`<button class="recruit-card ${c.index===ui.recruit?'selected':''}" data-recruit="${c.index}" aria-label="選擇${esc(c.name)}" title="${esc(c.name)} · ${money(1200+c.index*70)} G"><img src="${esc(portrait(c.index))}" alt="${esc(c.name)}頭像"><strong>${esc(c.name)}</strong><small>${money(1200+c.index*70)} G</small></button>`).join('')}</div><div class="selection-summary"><img src="${esc(portrait(selected.index))}" alt=""><div><strong>${esc(selected.name)}</strong><small>${money(1200+selected.index*70)} G</small></div>${graphicButton('hire','people','雇用至本隊',q.order==='move'||q.members.length>=11||state.money<1200+selected.index*70?'disabled':'','primary')}</div>`;
       }else if(ui.facility==='shop'){
         const items=(D.items||[]).filter(i=>i.equipmentSlot&&i.priceCandidate>0),selected=items.find(i=>i.index===ui.item)||items[0];ui.member=Math.min(ui.member,q.members.length-1);const recipient=q.members[ui.member];
-        content+=section('forge','武器與防具',esc(recipient.name))+`<label class="equipment-recipient">裝備對象<select id="equipmentMember" aria-label="裝備對象">${q.members.map((m,i)=>`<option value="${i}" ${i===ui.member?'selected':''}>${esc(m.name)}${i===0?' · 隊長':''}</option>`).join('')}</select></label><div class="selection-summary item-summary">${img('ITEM.MRG:'+selected.iconIdCandidate,'','選取裝備')}<div><strong>${esc(selected.name)}</strong><small>${money(selected.priceCandidate)} G · ${selected.equipmentSlot==='weapon'?'武器':'防具'}</small></div>${graphicButton('buy','coin','購買並裝備',q.order==='move'||!E.atBase(q)||state.money<selected.priceCandidate?'disabled':'','primary')}</div>${itemStats(selected)}<div class="equipped-summary">${['weapon','armor'].map(slot=>{const e=D.items.find(x=>x.index===recipient[slot]);return `<span>${slot==='weapon'?'武器':'防具'}：${e?esc(e.name):'未裝備'}</span>`;}).join('')}</div><div class="inventory-grid">${items.map(i=>`<button class="inventory-slot ${i.index===ui.item?'selected':''} ${recipient[i.equipmentSlot]===i.index?'equipped':''}" data-item="${i.index}" aria-label="選擇${esc(i.name)}" title="${esc(i.name)} · ${money(i.priceCandidate)} G">${img('ITEM.MRG:'+i.iconIdCandidate,'',i.name+'圖示候選')}<span>${money(i.priceCandidate)}</span>${recipient[i.equipmentSlot]===i.index?'<b>✓</b>':''}</button>`).join('')}</div>`;
+        content+=section('forge','武器與防具',esc(recipient.name))+`<label class="equipment-recipient">裝備對象<select id="equipmentMember" aria-label="裝備對象">${q.members.map((m,i)=>`<option value="${i}" ${i===ui.member?'selected':''}>${esc(m.name)}${i===0?' · 隊長':''}</option>`).join('')}</select></label><div class="selection-summary item-summary">${img('ITEM.MRG:'+selected.iconIdCandidate,'','選取裝備')}<div><strong>${esc(selected.name)}</strong><small>${money(selected.priceCandidate)} G · ${selected.equipmentSlot==='weapon'?'武器':'防具'}</small></div>${graphicButton('buy','coin','購買並裝備',q.order==='move'||!E.atBase(q)||state.money<selected.priceCandidate?'disabled':'','primary')}</div>${itemStats(selected)}<div class="equipped-summary">${['weapon','armor'].map(slot=>{const e=D.items.find(x=>x.index===recipient[slot]);return `<span>${slot==='weapon'?'武器':'防具'}：${e?esc(e.name):'未裝備'}</span>`;}).join('')}</div><div class="inventory-grid">${items.map(i=>`<button class="inventory-slot ${i.index===ui.item?'selected':''} ${recipient[i.equipmentSlot]===i.index?'equipped':''}" data-item="${i.index}" aria-label="選擇${esc(i.name)}" title="${esc(i.name)} · ${money(i.priceCandidate)} G">${img('ITEM.MRG:'+i.iconIdCandidate,'',i.name+'圖示')}<span>${money(i.priceCandidate)}</span>${recipient[i.equipmentSlot]===i.index?'<b>✓</b>':''}</button>`).join('')}</div>`;
       }else{
-        const slots=Array.from({length:Math.max(11,q.members.length)},(_,i)=>{const m=q.members[i];return m?`<div class="roster-slot" title="${esc(m.name)} · HP ${m.hp}/${m.maxHp} · 攻擊 ${m.attack}＋${E.equipmentStats(D,m).power} · 防禦 ${m.defense}＋${E.equipmentStats(D,m).protection} · 武器 ${esc(D.items.find(x=>x.index===m.weapon)?.name||'未裝備')} · 防具 ${esc(D.items.find(x=>x.index===m.armor)?.name||'未裝備')}"><img src="${esc(portrait(m.face))}" alt="${esc(m.name)}肖像候選">${i===0?'<span class="leader-crown">♛</span>':''}<span class="member-hp">${m.hp}/${m.maxHp}</span><span class="hp-bar"><i style="width:${m.hp/m.maxHp*100}%"></i></span><small>${esc(m.name)}</small><span class="roster-gear">${icon('sword')}${E.equipmentStats(D,m).power} ${icon('shield')}${E.equipmentStats(D,m).protection}</span></div>`:`<button class="roster-slot empty-slot" data-facility="recruit" aria-label="招募新成員" title="招募新成員">${icon('people')}<span>＋</span></button>`;});
-        content+=section('people','部隊編制',q.members.length+'/11')+`<div class="roster-grid">${slots.join('')}</div><div class="formation">${['橫列','突擊','防守'].map((t,i)=>`<button data-formation="${i}" class="${q.formation===i?'selected':''}" aria-pressed="${q.formation===i}" title="${t}陣形" aria-label="${t}陣形">${img('SPOINT.MRG:'+i,'',t+'陣形示意')}<span>${t}</span></button>`).join('')}</div><div class="map-orders">${graphicButton('heal','heal','醫院治療',q.order==='move'?'disabled':'')}${graphicButton('rest','camp','休息回復',q.order==='move'?'disabled':'')}</div>`;
+        const slots=Array.from({length:Math.max(11,q.members.length)},(_,i)=>{const m=state.mode==='native-original'?q.members.find((m,j)=>(m.originalSlot??j)===i):q.members[i];return m?`<button data-member-slot="${i}" class="roster-slot" title="${esc(m.name)} · HP ${m.hp}/${m.maxHp} · 基本攻擊 ${m.attack} · 武器威力 ${E.equipmentStats(D,m).power} · 基本防禦 ${m.defense} · 防具防護 ${E.equipmentStats(D,m).protection} · 武器 ${esc(D.items.find(x=>x.index===m.weapon)?.name||'未裝備')} · 防具 ${esc(D.items.find(x=>x.index===m.armor)?.name||'未裝備')}"><img src="${esc(portrait(m.face))}" alt="${esc(m.name)}肖像">${i===0?'<span class="leader-crown">♛</span>':''}<span class="member-hp">${m.hp}/${m.maxHp}</span><span class="hp-bar"><i style="width:${m.hp/m.maxHp*100}%"></i></span><small>${esc(m.name)}</small><span class="roster-gear">${icon('sword')}${E.equipmentStats(D,m).power} ${icon('shield')}${E.equipmentStats(D,m).protection}</span></button>`:`<button class="roster-slot empty-slot" data-facility="recruit" aria-label="招募新成員" title="招募新成員">${icon('people')}<span>＋</span></button>`;});
+        content+=section('people','部隊編制',q.members.length+'/11')+`<div class="roster-grid">${slots.join('')}</div><div class="formation">${window.OriginalCombat.originalData.formations.map((formation,i)=>{const t=formation.name.trim();return `<button data-formation="${i}" ${state.mode==='native-original'&&!E.commandAvailability(state,D,q.id).formation?'disabled':''} class="${q.formation===i?'selected':''}" aria-pressed="${q.formation===i}" title="${t}陣形" aria-label="${t}陣形"><svg viewBox="0 0 100 70" aria-hidden="true">${formation.positions.map(([x,y])=>`<circle cx="${90-x/3}" cy="${(y-145)/3}" r="3" fill="#ead399"/>`).join('')}</svg><span>${t}</span></button>`;}).join('')}</div><div class="map-orders">${graphicButton('heal','heal','醫院治療',q.order==='move'?'disabled':'')}${state.mode==='native-original'?(E.atBase(q)?graphicButton('recoverInTown','camp','駐留回復'):graphicButton('rest','camp','野外休息',E.commandAvailability(state,D,q.id).rest?'':'disabled')):graphicButton('rest','camp','休息回復',q.order==='move'?'disabled':'')}${state.mode==='native-original'?graphicButton('transfers','people','部隊與裝備移交',E.atBase(q)?'':'disabled'):''}</div>`;
       }
-      content+='<button class="rules-link" data-action="evidence" title="人物能力與裝備效果仍採重製暫定規則">ⓘ 重製暫定規則</button>';
+      content+='<button class="rules-link" data-action="evidence" title="原作能力、裝備與交易對照">ⓘ 原作規則與驗證</button>';
     }else{
       content=section('chest','傭兵團金庫')+`<div class="treasury-art">${icon('chest')}${icon('coin')}${icon('bag')}</div><div class="treasury-stats"><div>${icon('coin')}<span>資金</span><strong>${money(state.money)}</strong></div><div>${icon('bag')}<span>債務</span><strong>${money(state.debt)}</strong></div></div><div class="finance-progress" title="債務餘額"><i style="width:${Math.min(100,state.debt/2500000*100)}%"></i></div><div class="repayment-grid">${[10000,50000,100000].map(n=>`<button data-repay="${n}" aria-label="還款${money(n)} G" title="還款 ${money(n)} G" ${state.money<Math.min(n,state.debt)||!state.debt?'disabled':''}>${icon('bag')}<strong>${money(n)}</strong><span>還款</span></button>`).join('')}</div><button class="graphic-action all-repay" data-repay="${Math.min(state.money,state.debt)}" ${!state.money||!state.debt?'disabled':''}>${icon('chest')}<span>可用資金全數還款</span></button><div class="achievement-row"><span title="完成委託">${icon('scroll')} ${state.completed.length}</span><span title="聲望">${icon('flag')} ${state.rep}</span></div><button class="rules-link" data-action="evidence">ⓘ 經濟數值仍採重製暫定規則</button>${state.ended?'<h3 class="gold">債務已清償！</h3>':''}`;
     }
     $('#deskContent').innerHTML=content;
+    if(state.mode==='native-original')$('#deskContent').insertAdjacentHTML('beforeend',nativeTasks(q));
     window.HRUI.decorate();
   }
   function setView(view){ui.view=view;$('#commandView').hidden=view!=='command';$('#atlasView').hidden=view!=='atlas';$('#archiveView').hidden=view!=='archive';$('#unitDeck').hidden=view!=='command';$$('.main-nav button').forEach(b=>b.classList.toggle('selected',b.dataset.view===view));if(view==='atlas')renderAtlas();if(view==='archive')renderArchive();}
@@ -102,49 +225,54 @@
     if(ui.archive==='text')rows=[...D.strings,...Object.values(D.textArchives).flat()].filter(s=>(s.id+' '+s.text).toLowerCase().includes(query));
     if(ui.archive==='text')html=rows.slice(0,ui.limit).map(s=>`<div class="text-row"><code>${esc(s.id)}<br>file ${hex(s.offset)}</code><span>${esc(s.text)}</span></div>`).join('');
     else html=`<div class="archive-grid">${rows.slice(0,ui.limit).map(r=>{
-      if(ui.archive==='characters')return `<button class="archive-card" data-class="${r.index}"><img src="${esc(portrait(r.index))}" alt="索引 ${r.index} 的頭像候選" loading="lazy"><h3>${esc(r.name)}</h3><small>INDEX ${r.index} · ${hex(r.offset)}</small></button>`;
-      if(ui.archive==='items')return `<button class="archive-card" data-inspect-item="${r.index}">${img('ITEM.MRG:'+r.iconIdCandidate,'',r.name+'圖示候選')}<h3>${esc(r.name)}</h3><small>${money(r.priceCandidate)} G（欄位候選）<br>${hex(r.offset)}</small></button>`;
+      if(ui.archive==='characters')return `<button class="archive-card" data-class="${r.index}"><img src="${esc(portrait(r.index))}" alt="索引 ${r.index} 的頭像" loading="lazy"><h3>${esc(r.name)}</h3><small>INDEX ${r.index} · ${hex(r.offset)}</small></button>`;
+      if(ui.archive==='items')return `<button class="archive-card" data-inspect-item="${r.index}">${img('ITEM.MRG:'+r.iconIdCandidate,'',r.name+'圖示')}<h3>${esc(r.name)}</h3><small>${money(r.priceCandidate)} G（原作基準價）<br>${hex(r.offset)}</small></button>`;
       return `<button class="archive-card art-card" data-art="${esc(r.id)}"><img src="${esc(r.url)}" alt="${esc(r.id)}" loading="lazy"><h3>${esc(r.id)}</h3><small>${r.w} × ${r.h} · ${esc(r.kind)}</small></button>`;
     }).join('')}</div>`;
-    $('#archiveResults').innerHTML=`<p class="count-label">共 ${rows.length} 項 · 已顯示 ${Math.min(ui.limit,rows.length)} 項${ui.archive==='characters'?' · 頭像與人物完整索引關係尚待驗證':''}</p>${html||'<div class="empty">沒有符合的資料</div>'}${rows.length>ui.limit?'<button class="load-more" id="loadMore">再顯示 48 項 ↓</button>':''}`;
+    $('#archiveResults').innerHTML=`<p class="count-label">共 ${rows.length} 項 · 已顯示 ${Math.min(ui.limit,rows.length)} 項${ui.archive==='characters'?' · 原作分類索引':''}</p>${html||'<div class="empty">沒有符合的資料</div>'}${rows.length>ui.limit?'<button class="load-more" id="loadMore">再顯示 48 項 ↓</button>':''}`;
   }
   const modal=$('#modal');
   function openModal(html,kind='info'){ui.speed=0;modalKind=kind;modal.dataset.kind=kind;$('#modalContent').innerHTML=html;if(!modal.open)modal.showModal();render();}
-  function closeModal(){if(battle?.phase==='active'){toast('請先撤退或完成戰鬥。');return;}modal.close();modalKind='';battle=null;}
-  function showWelcome(){openModal(`<div class="game-splash">${img('GMAP.PXS','splash-map','原作大陸全圖')}<div class="splash-copy"><span class="eyebrow">HIGH REWARD · WEB REMAKE</span><h2>傭兵團，再次出發。</h2><div class="splash-portraits">${[0,1,2,3,4,5].map(i=>`<img src="${esc(portrait(i))}" alt="原作人物頭像候選">`).join('')}</div><p>六支部隊。一片大陸。未完的傭兵之旅。</p><div class="modal-actions">${graphicButton('welcomeStart','sword','開始征戰','','primary')}${graphicButton('welcomeAtlas','map','探索世界')}</div><small>開發試作 · 戰役規則尚未完成原作驗證</small></div></div>`,'welcome');}
-  function showEvidence(){openModal(`<span class="eyebrow">RESTORATION NOTES</span><h2>忠實重製的目前進度</h2><h3>從原檔恢復</h3><p>11 國介紹、99 個據點名稱、6 隊原作名稱、83 項人物／兵種、86 項裝備／載具，以及 1,314 段主程式文字。主程式文字雜湊逐項吻合套件清冊；原作套件含 HD／AI 各 595 項；本次素材已驗收 ${redraw.reviewed}/${redraw.total} 項（圖像重繪與向量重製）。</p><h3>0.4 已接入</h3><p>原作 128×96 地形、四向步行搜尋與通行係數；裝備威力、防護與射速數值；每名成員分開保存武器與防具。原作每隊 11 槽，舊檔超額成員保留。城鎮關聯指標不再當作道路。</p><h3>有來源支持，仍待驗證</h3><p>據點座標、據點關聯指標、國別資料結構、頭像索引、裝備價格及屬性欄位。它們可追溯原檔，但尚未完成執行期驗證。</p><h3>尚未移植完成</h3><p>原作完整戰鬥公式、行軍與時鐘對拍、跨國及載具資格、敵軍 AI、軍事／民事劇情、銀行追債、隱藏事件、結局與 DOS 存檔相容。本開發版中的可玩戰役採明示的暫定規則，不能當成原作通關或完整重寫。</p><p class="source">MAIN.EXE SHA-256<br>${esc(D.mainSha256)}<br>IDA segment × 16 + offset − 0xB600<br>${D.mapping.verifiedRows} / ${D.mapping.totalRows} indexed string hashes verified</p><div class="modal-actions"><button data-action="help">操作說明</button>${window.HR_RELEASE?.online?'':'<button data-action="original">開啟原版對照</button>'}</div>`,'evidence');}
-  function showHelp(){openModal(`<span class="eyebrow">FIELD MANUAL</span><h2>指揮官手冊</h2><div class="help-grid"><div>${icon('people')}<h3>選擇部隊</h3><p>點選下方肖像，查看生命與體力條。1–6 可快速切換。</p></div><div>${icon('tavern')}<h3>招募與整備</h3><p>點酒館選兵種卡，再按雇用；商店先選裝備對象，再選武器或防具；兩個槽位分開保留。</p></div><div>${icon('scroll')}<h3>接受委託</h3><p>點看板上的懸賞卡。運送按「出發」，軍事委託按「出擊」。</p></div><div>${icon('play')}<h3>推進時間</h3><p>選目的城鎮，按「向此處行軍」便會自動播放。空白鍵暫停；停止行軍會保留途中位置。</p></div><div>${icon('heal')}<h3>休整部隊</h3><p>在城鎮點醫院或營帳；編制頁可點陣形圖切換戰術。</p></div><div>${icon('chest')}<h3>金庫與存檔</h3><p>點錢袋還款。上方磁碟圖示儲存，齒輪內可匯入或匯出進度。</p></div></div><p class="small muted">重製開發版的戰役數值與流程尚待原作驗證。原生 Web 存檔與 DOS 原版分開，不能互通。完整研究說明可由「還原進度」查看。</p>`,'help');}
+  function closeModal(){if(battle?.phase==='active'){toast('請先撤退或完成戰鬥。');return;}if(modalKind==='story'&&state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type)){toast('請使用對話中的選項或返回按鈕完成目前流程。');return;}modal.close();modalKind='';battle=null;}
+  function showWelcome(){openModal(`<div class="game-splash">${img('GMAP.PXS','splash-map','原作大陸全圖')}<div class="splash-copy"><span class="eyebrow">HIGH REWARD · WEB 0.5</span><h2>傭兵團，再次出發。</h2><div class="splash-portraits">${[0,1,2,3,4,5].map(i=>`<img src="${esc(portrait(i))}" alt="傭兵團隊長">`).join('')}</div><p>六支部隊、十一個國家。從薩蘭特城出發，履行委託、整備部隊，償清家族債務。</p><div class="modal-actions">${graphicButton('welcomeStart','sword','開始征戰','','primary')}${graphicButton('welcomeAtlas','map','探索世界')}</div><small>原作規則與劇情 · 現代瀏覽器介面</small></div></div>`,'welcome');}
+  function showEvidence(){openModal(`<span class="eyebrow">RESTORATION NOTES · 0.5</span><h2>原作還原與驗證</h2><p>原作主程式與 138 個程式區塊轉為受限的 JavaScript 執行模型，保留世界時鐘、六隊狀態、事件旗標、劇情與交易流程。戰鬥以獨立的原作規則移植呈現。</p><h3>戰鬥與世界</h3><p>原作能力成長、命中、傷害、射速、16 種陣形、個別與全隊撤退、勝敗結算；世界攻城、守軍、載具故障、交通資格、128×96 地形及自由座標行軍。</p><h3>劇情與設施</h3><p>民事、軍事、公演、建築、銀行與主線事件由原作程式控制；裝備、招募及載具交易使用原作商店流程，償債後接入六隊結局、總帳與製作名單。</p><h3>對照證據</h3><p>603 個世界循環逐一比對全部 31,848 個戰役位元組、亂數與遭遇資料；99 處據點的 337 個入口、2,398 個分支節點通過操作檢查。戰鬥、交通、交易與任務另有原程式差異測試。</p><h3>瀏覽器呈現</h3><p>${redraw.reviewed}/${redraw.total} 項素材完成重繪。對話、行軍、戰鬥及片尾採新版畫面與操作節奏；27 首原作 MIDI 使用瀏覽器合成音色。Web JSON 與 DOS 存檔格式分開。測試覆蓋列出的案例，並不代表所有可能的長期遊玩組合都已窮舉。</p><div class="modal-actions"><button data-action="help">操作說明</button></div>`,'evidence');}
+  function showHelp(){openModal(`<span class="eyebrow">FIELD MANUAL</span><h2>指揮官手冊</h2><div class="help-grid"><div>${icon('people')}<h3>六支部隊</h3><p>點選下方部隊或按 1–6 切換。整備頁可查看每名成員能力、裝備、陣形與同城移交。</p></div><div>${icon('forge')}<h3>原作商店</h3><p>在駐留城鎮選擇商店或酒店。先選商品，再選接收成員；取消選取後可離店。載具商店提供原作換購、出售與劇情限制。</p></div><div>${icon('scroll')}<h3>委託與主線</h3><p>民事與軍事看板保留原作條件及對話。接任後的目的地、期限與進度會顯示在部隊與委託頁。</p></div><div>${icon('move')}<h3>自由行軍</h3><p>點選據點或地圖空白處，選步行、車輛或飛機後出發。偵察、占領、攻擊設定與退卻依原作資格開放。空白鍵暫停。</p></div><div>${icon('sword')}<h3>遭遇戰</h3><p>可暫停、逐步推進、查看能力、個別撤退或全隊撤退。戰鬥結束後返回原作事件，勝敗與傷亡持續保存。</p></div><div>${icon('chest')}<h3>存檔與還款</h3><p>金庫可拜訪銀行。進度自動保存在此瀏覽器；設定中可匯出、匯入 JSON。舊版試作存檔保留為獨立備份。</p></div></div><p class="small muted">時間暫停時可安心下達命令；城鎮休養需要推進時間。原作每月 28 日。音樂需先點上方音符啟用。</p>`,'help');}
   function showSettings(){
     const themes=window.HR_RELEASE?.online?['redrawn']:['redrawn','hd','hd-ai'];
     const names={redrawn:`高清重繪 · ${redraw.reviewed}/${redraw.total}`,hd:'原作 HD','hd-ai':'套件 AI 風格'};
-    openModal(`<span class="eyebrow">SYSTEM</span><h2>設定與存檔</h2><div class="settings-row"><span>美術風格</span><select id="themeSelect">${themes.map(t=>`<option value="${t}" ${prefs.theme===t?'selected':''}>${names[t]}</option>`).join('')}</select></div><p class="small muted">${redraw.complete?'595項素材已完成重繪驗收。':`已驗收 ${redraw.reviewed}/${redraw.total} 項，其餘暫用原作素材；未完成項目不計為重繪。`}</p><div class="settings-row"><span>本機存檔</span><button data-action="save">儲存目前進度</button></div><div class="settings-row"><span>備份進度</span><button data-action="export">匯出 JSON</button></div><div class="settings-row"><span>恢復備份</span><button data-action="import">匯入 JSON</button></div><div class="settings-row"><span>開發測試戰役</span><button data-action="resetConfirm">重新開始</button></div><p class="small">${saveUnavailable?'此瀏覽器無法使用本機儲存，請使用匯出備份。':'進度只保存在目前瀏覽器，跨裝置請匯出JSON備份。'}</p><div class="modal-actions"><button data-action="evidence">還原進度</button><button data-action="help">操作說明</button></div>`,'settings');
+    openModal(`<span class="eyebrow">SYSTEM</span><h2>設定與存檔</h2><div class="settings-row"><span>美術風格</span><select id="themeSelect">${themes.map(t=>`<option value="${t}" ${prefs.theme===t?'selected':''}>${names[t]}</option>`).join('')}</select></div><p class="small muted">${redraw.complete?'595項素材已完成重繪驗收。':`已驗收 ${redraw.reviewed}/${redraw.total} 項，其餘暫用原作素材；未完成項目不計為重繪。`}</p><div class="settings-row"><span>本機存檔</span><button data-action="save">儲存目前進度</button></div><div class="settings-row"><span>備份進度</span><button data-action="export">匯出 JSON</button></div>${legacyBackup()?'<div class="settings-row"><span>舊版試作進度</span><button data-action="exportLegacy">下載舊版備份</button></div>':''}<div class="settings-row"><span>恢復備份</span><button data-action="import">匯入 JSON</button></div><div class="settings-row"><span>原作戰役</span><button data-action="resetConfirm">重新開始</button></div><p class="small">${saveUnavailable?'此瀏覽器無法使用本機儲存，請使用匯出備份。':'進度只保存在目前瀏覽器，跨裝置請匯出JSON備份。'}</p><div class="modal-actions"><button data-action="evidence">還原進度</button><button data-action="help">操作說明</button></div>`,'settings');
   }
-  function showCountry(i){const c=D.countries[i];openModal(`<span class="eyebrow">NATION ${i+1} / ORIGINAL ATLAS</span><h2>${esc(c.name)}</h2>${img('MAP'+String(i+1).padStart(2,'0')+'.PXZ','country-detail-img',c.name+'原作地圖')}<p>${esc(c.text)}</p><div class="base-tags">${D.bases.filter(b=>b.countryIndexCandidate===i).map(b=>`<button data-jumpbase="${b.index}">${esc(b.name)}</button>`).join('')}</div><p class="source">original/COUNTRY.MES · file ${hex(c.offset)} · CP950</p>`,'country');}
-  function inspectClass(i){const c=D.classes.find(c=>c.index===i);if(!c)return;openModal(`<div class="modal-hero"><img src="${esc(portrait(i))}" alt="索引 ${i} 頭像候選"><div><span class="eyebrow">CHARACTER / TYPE ${i}</span><h2>${esc(c.name)}</h2><p>原版名稱直接從 MAIN.EXE 讀取。頭像依索引候選呈現，數值欄位仍待反組譯或執行期驗證，暫不將未知欄位標成確定的能力。</p><p class="source">original/MAIN.EXE · ${hex(c.offset)}<br>${esc(c.ida)} · record ${c.recordSize} bytes</p><h3>原始 16-bit 數值</h3><p>${c.u16FieldsAt22.map(n=>esc(n)).join(' · ')}</p></div></div>`,'class');}
-  function inspectItem(i){const r=D.items.find(r=>r.index===i);if(!r)return;openModal(`<span class="eyebrow">ORIGINAL ITEM ${i}</span><h2>${esc(r.name)}</h2>${img('ITEM.MRG:'+r.iconIdCandidate,'country-detail-img','裝備圖示候選')}${itemStats(r)}<p>原檔價格：${money(r.priceCandidate)} G · 類別：${r.categoryCandidate}。</p><p>耐久欄位：${r.recoveredStats?.durability??'未確認'} · 回復代碼：${r.recoveredStats?.recoveryCode??'未確認'}</p><p>這些數字取自原作紀錄。威力、防護與射速係數已有原碼使用證據；商店實際價格、國別販售與完整傷害流程仍待還原。</p><p class="source">original/MAIN.EXE · file ${hex(r.offset)} · record ${r.recordSize} bytes</p>`,'item');}
+  function showCountry(i){const c=D.countries[i];openModal(`<span class="eyebrow">NATION ${i+1} / ORIGINAL ATLAS</span><h2>${esc(c.name)}</h2>${img('MAP'+String(i+1).padStart(2,'0')+'.PXZ','country-detail-img',c.name+'原作地圖')}<p>${esc(c.text)}</p><div class="base-tags">${D.bases.filter(b=>b.countryIndexCandidate===i&&baseVisible(b)).map(b=>`<button data-jumpbase="${b.index}">${esc(b.name)}</button>`).join('')}</div><p class="source">original/COUNTRY.MES · file ${hex(c.offset)} · CP950</p>`,'country');}
+  function inspectClass(i){const c=D.classes.find(c=>c.index===i);if(!c)return;openModal(`<div class="modal-hero"><img src="${esc(portrait(i))}" alt="索引 ${i} 頭像"><div><span class="eyebrow">CHARACTER / TYPE ${i}</span><h2>${esc(c.name)}</h2><p>人物及兵種資料取自原作。下列數值依序為生命、攻擊、防禦、三項上限、武器／交通技能及三項技能上限；實際能力依原作等級公式計算。</p><p class="source">original/MAIN.EXE · ${hex(c.offset)}<br>${esc(c.ida)} · record ${c.recordSize} bytes</p><h3>原始 16-bit 數值</h3><p>${c.u16FieldsAt22.map(n=>esc(n)).join(' · ')}</p></div></div>`,'class');}
+  function inspectItem(i){const r=D.items.find(r=>r.index===i);if(!r)return;openModal(`<span class="eyebrow">ORIGINAL ITEM ${i}</span><h2>${esc(r.name)}</h2>${img('ITEM.MRG:'+r.iconIdCandidate,'country-detail-img','裝備圖示')}${itemStats(r)}<p>原檔價格：${money(r.priceCandidate)} G · 類別：${r.categoryCandidate}。</p><p>耐久欄位：${r.recoveredStats?.durability??'未確認'} · 回復代碼：${r.recoveredStats?.recoveryCode??'未確認'}</p><p>數值取自原作紀錄。實際交易依商店流程與舊裝備折抵計算；戰鬥傷害依能力、裝備、命中及防禦計算。</p><p class="source">original/MAIN.EXE · file ${hex(r.offset)} · record ${r.recordSize} bytes</p>`,'item');}
   function showArt(id){const a=asset(id);if(!a)return;openModal(`<span class="eyebrow">ORIGINAL ASSET</span><h2>${esc(id)}</h2><img src="${esc(a.url)}" class="country-detail-img" alt="${esc(id)}"><p class="source">${esc(a.url)}<br>catalog ${a.w} × ${a.h} · ${esc(a.kind)} · ${esc(a.pal)} palette<br>PNG SHA-256: ${esc(a.fileSha256)}</p>`,'art');}
   function original(){if(window.HR_RELEASE?.online){toast('原版DOS對照僅於本機提供。');return;}if(location.protocol==='file:'){toast('請先執行「啟動網頁版.bat」，原版模擬器需要本機 HTTP 伺服器。');return;}window.open('/original/','_blank','noopener');}
   function startBattle(){try{battle=E.beginBattle(state,D,ui.selected);battleElapsed=0;autoBattle=true;openModal('','battle');renderBattle();}catch(e){toast(e.message);}}
   function renderBattle(){if(!battle)return;const b=battle;
-    const team=(members,side)=>`<div class="battle-team ${side}">${members.map((m,i)=>`<div class="battle-unit ${m.hp?'':'dead'}">${sprite('BC32.MRG:'+(side==='allies'?i%4*3:9),m.name)}<div class="mini-bar"><i style="width:${m.hp/m.maxHp*100}%"></i></div><small>${m.hp}/${m.maxHp}</small></div>`).join('')}</div>`;
+    const team=(members,side)=>b.original?members.map((m,i)=>{
+      if(m.classId===-1)return '';const nativeSide=side==='allies'?'friendly':'enemy',layers=window.OriginalCombat.battleSpriteLayers(m,nativeSide,b.core.effects,window.OriginalCombat.originalData.classes);
+      return layers.map(l=>`<span class="original-battle-layer" style="left:${l.x/640*100}%;top:${l.y/400*100}%">${sprite(l.archive.toUpperCase()+':'+l.index,m.name)}</span>`).join('')+`<button class="original-battle-person" style="left:${(m.x+32)/640*100}%;top:${(m.y+32)/400*100}%" data-battle-inspect="${i}" data-battle-side="${nativeSide}" aria-label="查看${esc(m.name)}能力"><span class="mini-bar"><i style="width:${Math.max(0,m.hp)/Math.max(1,m.maxHp)*100}%"></i></span><small>${m.hp}/${m.maxHp}</small></button>`;
+    }).join(''):`<div class="battle-team ${side}">${members.map((m,i)=>`<div class="battle-unit ${m.hp?'':'dead'}">${sprite('BC32.MRG:'+(side==='allies'?i%4*3:9),m.name)}<div class="mini-bar"><i style="width:${m.hp/Math.max(1,m.maxHp)*100}%"></i></div><small>${m.hp}/${m.maxHp}</small></div>`).join('')}</div>`;
     const controls=b.phase==='active'
       ? graphicButton('battlePause',autoBattle?'pause':'play',autoBattle?'暫停戰鬥':'繼續戰鬥')+graphicButton('battleStep','arrow','單步推進')+graphicButton('retreat','back','撤退')
       : graphicButton('battleClose','castle','返回本部','','primary');
     $('#modalContent').innerHTML=`<span class="eyebrow">HIGH REWARD · BATTLE</span><h2>${esc(state.squads[b.squad].name)}</h2>
-      <div class="battle-scene ${b.phase==='active'?'is-active':''}">${img('BSTAGE.MRG:1','battle-ground','原作戰鬥舞台')}<span class="battle-title">${esc(b.phase==='active'?'ENGAGED':b.phase==='won'?'VICTORY':'WITHDRAWAL')}</span><span class="battle-turn">TURN ${String(b.turn).padStart(2,'0')}</span>${team(b.allies,'allies')}${team(b.enemies,'enemies')}</div>
+      <div class="battle-scene ${b.original?'original-scene':''} ${b.phase==='active'?'is-active':''}">${img('BSTAGE.MRG:'+(b.background??state.story?.event?.background??1),'battle-ground','原作戰鬥舞台')}<span class="battle-title">${esc(b.phase==='active'?'ENGAGED':b.phase==='won'?'VICTORY':'WITHDRAWAL')}</span><span class="battle-turn">TURN ${String(b.turn).padStart(2,'0')}</span>${team(b.allies,'allies')}${team(b.enemies,'enemies')}</div>
       ${b.phase==='active'?'':`<div class="battle-result">${b.phase==='won'?'VICTORY':'RETREAT'}</div><p style="text-align:center">${b.phase==='won'?`${icon('coin')} ${money(b.reward)} G`:'部隊已撤回'}</p>`}
-      <details class="battle-details"><summary>戰鬥紀錄</summary><div class="battle-log">${b.log.slice(0,8).map(l=>`<div>${esc(l)}</div>`).join('')}</div></details>
-      <div class="modal-actions">${controls}</div><p class="battle-rule">戰鬥試作 · 暫定規則</p>`;
+      ${b.original&&ui.battleInspect?battleInspection(b):''}<details class="battle-details"><summary>戰鬥紀錄</summary><div class="battle-log">${b.log.slice(0,8).map(l=>`<div>${esc(l)}</div>`).join('')}</div></details>
+      <div class="modal-actions">${controls}</div><p class="battle-rule">${b.original?'原作命中、射速、傷害、陣形與退場規則':'戰鬥試作 · 暫定規則'}</p>`;
   }
+  function battleInspection(b){const selected=ui.battleInspect,a=b.core[selected.side]?.[selected.index];if(!a||a.classId===-1)return '';return `<div class="battle-inspection"><strong>${esc(b.names[selected.side][selected.index])}</strong><span>生命 ${a.hp}/${a.maxHp} · 等級 ${a.level} · 攻擊 ${a.attack} · 防禦 ${a.defense}</span><span>武器威力 ${a.power} · 防護 ${a.armor} · 射速 ${a.rate} · 累積 ${a.counter}</span>${selected.side==='friendly'&&b.phase==='active'&&a.hp>0&&a.state<28?graphicButton('withdrawMember','back','個別撤退'):''}</div>`;}
   // All dynamic strings from binary data or imported saves are escaped before insertion.
-  document.addEventListener('click',event=>{
+  document.addEventListener('click',event=>{invalidateWorld();
     const b=event.target.closest('button');if(!b||b.disabled)return;
     if(b.dataset.view){setView(b.dataset.view);return;}
     if(b.dataset.speed!==undefined){ui.speed=+b.dataset.speed;render();return;}
-    if(b.dataset.squad!==undefined){ui.selected=+b.dataset.squad;ui.base=squad().at;focusOnBase(ui.base);render();return;}
+    if(b.dataset.squad!==undefined){ui.point=null;ui.selected=+b.dataset.squad;state.selectedSquad=ui.selected;ui.base=squad().at;state.viewCountry=D.bases[ui.base].countryIndexCandidate;focusOnBase(ui.base);render();return;}
     if(b.dataset.tab){ui.tab=b.dataset.tab;ui.facility='roster';render();return;}
     if(b.dataset.facility){
       const f=b.dataset.facility;
+      if(state.mode==='native-original'&&['shop','recruit','clinic'].includes(f)){const ids={shop:64,recruit:67,clinic:68},action=sourceTownActions().find(a=>a.id===ids[f]);if(action)beginStory(action.activateTask);else toast('此處沒有該原作設施');return;}
       if(f==='clinic'){if(act({type:'heal'}))toast('部隊已完成治療');return;}
       if(f==='camp'){act({type:'rest'});return;}
       if(f==='board')ui.tab='missions';else if(f==='finance')ui.tab='finance';else{ui.tab='troops';ui.facility=f;}
@@ -152,20 +280,44 @@
     }
     if(b.dataset.recruit!==undefined){ui.recruit=+b.dataset.recruit;renderDesk();return;}
     if(b.dataset.item!==undefined){ui.item=+b.dataset.item;renderDesk();return;}
+    if(b.dataset.travelMode!==undefined){ui.travelMode=+b.dataset.travelMode;renderDesk();return;}
+    if(b.dataset.vehicleBuy!==undefined){act({type:'vehicleBuy',slot:+b.dataset.vehicleBuy});return;}
+    if(b.dataset.vehicleSell!==undefined){act({type:'vehicleSell',slot:+b.dataset.vehicleSell});return;}
+    if(b.dataset.originalTown!==undefined){const a=sourceTownActions()[+b.dataset.originalTown];if(a)beginStory(a.activateTask);return;}
+    if(b.dataset.storyValue!==undefined){continueStory({value:+b.dataset.storyValue,replaceConfirmed:b.dataset.storyReplace==='true'});return;}
+    if(b.dataset.transferKind){if(act({type:'transfer',kind:b.dataset.transferKind,target:ui.transferTarget,fromSlot:ui.transferFromSlot,toSlot:ui.transferToSlot})){showTransfers();toast('移交完成');}return;}
+    if(b.dataset.battleInspect!==undefined){ui.battleInspect={side:b.dataset.battleSide,index:+b.dataset.battleInspect};renderBattle();return;}
     if(b.dataset.country!==undefined){showCountry(+b.dataset.country);return;}
     if(b.dataset.class!==undefined){inspectClass(+b.dataset.class);return;}
     if(b.dataset.inspectItem!==undefined){inspectItem(+b.dataset.inspectItem);return;}
     if(b.dataset.art){showArt(b.dataset.art);return;}
     if(b.dataset.archive){ui.archive=b.dataset.archive;ui.limit=48;renderArchive();return;}
     if(b.dataset.accept){act({type:'accept',id:b.dataset.accept});return;}
+    if(b.dataset.memberSlot!==undefined){showMember(+b.dataset.memberSlot);return;}
     if(b.dataset.formation!==undefined){act({type:'formation',value:+b.dataset.formation});return;}
     if(b.dataset.repay){act({type:'repay',amount:+b.dataset.repay});return;}
-    if(b.dataset.jumpbase!==undefined){ui.base=+b.dataset.jumpbase;ui.tab='city';closeModal();setView('command');render();return;}
+    if(b.dataset.jumpbase!==undefined){ui.point=null;ui.base=+b.dataset.jumpbase;state.viewCountry=D.bases[ui.base].countryIndexCandidate;ui.tab='city';closeModal();setView('command');render();return;}
     switch(b.dataset.action){
-      case 'move':if(act({type:'move',to:ui.base})){ui.speed=1;render();toast('已開始步行，時間自動播放。');}break;
+      case 'move':if(act({type:'move',to:ui.base,mode:ui.travelMode??0})){ui.speed=1;render();toast('已開始移動，時間自動播放。');}break;
+      case 'ferry':if(act({type:'ferry'})){ui.base=squad().at;focusOnBase(ui.base);render();}break;
       case 'rest':act({type:'rest'});break;
+      case 'enterBase':if(act({type:'enterBase'})){ui.base=squad().at;render();}break;
+      case 'moveToPoint':if(ui.point&&act({type:'moveToPoint',x:ui.point.x,y:ui.point.y,mode:ui.travelMode??0})){ui.speed=1;render();}break;
+      case 'scoutBase':if(act({type:'scoutBase',to:ui.base,mode:ui.travelMode??0})){ui.speed=1;render();}break;
+      case 'occupy':act({type:'occupy'});break;
+      case 'attackSettings':act({type:'attackSettings'});break;
+      case 'recoverInTown':ui.speed=1;render();break;
+      case 'currentLocation':ui.point=null;ui.base=squad().at;state.viewCountry=D.bases[ui.base].countryIndexCandidate;focusOnBase(ui.base);render();break;
+      case 'retreatTravel':if(act({type:'retreatTravel',to:ui.base})){ui.speed=1;render();}break;
+      case 'originalBank':beginStory({kind:'bank'});break;
+      case 'transfers':showTransfers();break;
+      case 'storyNext':continueStory();break;
+      case 'endingNext':state.ending.index++;save(true);showEnding();break;
+      case 'endingPrevious':state.ending.index=Math.max(0,state.ending.index-1);save(true);showEnding();break;
+      case 'endingFinish':state.ending.finished=true;save(true);closeModal();render();break;
+      case 'endingReplay':state.ending.index=0;state.ending.finished=false;showEnding();break;
       case 'stop':act({type:'stop'});break;
-      case 'heal':act({type:'heal'});break;
+      case 'heal':if(state.mode==='native-original'){const a=sourceTownActions().find(a=>a.id===68);if(a)beginStory(a.activateTask);else toast('此處沒有原作病院');}else act({type:'heal'});break;
       case 'localMissions':ui.tab='missions';render();break;
       case 'troops':ui.tab='troops';ui.facility='roster';render();break;
       case 'journal':openModal('<h2>行動紀錄</h2>'+$('#log').innerHTML,'journal');break;
@@ -174,32 +326,41 @@
       case 'missionMove':{const m=state.taken.find(m=>m.squad===ui.selected);if(m){ui.base=m.to;act({type:'move',to:m.to});ui.speed=1;render();}break;}
       case 'battle':startBattle();break;
       case 'battlePause':autoBattle=!autoBattle;renderBattle();break;
+      case 'withdrawMember':{const result=E.battleCommand(state,battle,{type:'withdraw-member',index:ui.battleInspect.index});if(!result?.accepted)toast('此成員目前無法個別撤退');save(true);renderBattle();break;}
       case 'battleStep':E.battleStep(state,battle);renderBattle();save(true);render();break;
       case 'retreat':E.finishBattle(state,battle,false);renderBattle();save(true);render();break;
-      case 'battleClose':closeModal();render();break;
-      case 'welcomeStart':prefs.welcome=true;savePrefs();closeModal();break;
+      case 'battleClose':{const finished=battle;closeModal();if(finished?.original&&state.story?.event?.type==='battle')continueStory({value:finished.core.outcome,unitBytes:Array.from(finished.core.unitBytes),encounterBytes:Array.from(finished.core.encounterBytes),randomSeed:state.seed});render();break;}
+      case 'welcomeStart':prefs.welcome=true;savePrefs();closeModal();resumeScene();break;
       case 'welcomeAtlas':prefs.welcome=true;savePrefs();closeModal();setView('atlas');break;
+      case 'musicPlay':playMusic();break;
+      case 'musicToggle':toggleMusic();break;
+      case 'musicStop':window.OriginalMusic.stop();showMusic();break;
+      case 'exportLegacy':exportLegacy();break;
       case 'help':showHelp();break;
       case 'evidence':showEvidence();break;
       case 'original':original();break;
       case 'save':save();break;
       case 'export':{const file=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),u=URL.createObjectURL(file),a=document.createElement('a');a.href=u;a.download=`highreward-web-day${state.day}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);toast('已匯出 Web 存檔。');break;}
       case 'import':$('#importFile').click();break;
-      case 'resetConfirm':openModal('<h2>重新開始測試戰役</h2><p>目前瀏覽器中的原生重製進度會被覆寫。可先匯出 JSON 留存。</p><div class="modal-actions"><button data-action="export">先匯出</button><button class="primary" data-action="reset">確定重新開始</button></div>','reset');break;
-      case 'reset':state=E.newGame(D);ui.selected=0;ui.base=state.squads[0].at;ui.speed=0;save(true);closeModal();render();toast('已建立新的原生測試戰役。');break;
+      case 'resetConfirm':openModal('<h2>重新開始戰役</h2><p>目前瀏覽器中的原生重製進度會被覆寫。可先匯出 JSON 留存。</p><div class="modal-actions"><button data-action="export">先匯出</button><button class="primary" data-action="reset">確定重新開始</button></div>','reset');break;
+      case 'reset':state=E.newGame(D);ui.selected=0;ui.base=state.squads[0].at;ui.speed=0;ui.point=null;battle=null;save(true);closeModal();render();resumeScene();toast('已建立新的原作戰役。');break;
     }
     if(b.id==='loadMore'){ui.limit+=48;renderArchive();}
   });
-  document.addEventListener('change',e=>{
+  document.addEventListener('change',e=>{invalidateWorld();
+    if(e.target.id==='musicTrack'){ui.musicTrack=e.target.value;}
     if(e.target.id==='equipmentMember'){ui.member=+e.target.value;renderDesk();}
-    if(e.target.id==='baseSelect'){ui.base=+e.target.value;focusOnBase(ui.base);renderDesk();}
+    if(e.target.id==='transferTarget'){ui.transferTarget=+e.target.value;showTransfers();}
+    if(e.target.id==='transferFromSlot'){ui.transferFromSlot=+e.target.value;}
+    if(e.target.id==='transferToSlot'){ui.transferToSlot=+e.target.value;}
+    if(e.target.id==='baseSelect'){ui.point=null;ui.base=+e.target.value;state.viewCountry=D.bases[ui.base].countryIndexCandidate;focusOnBase(ui.base);renderDesk();}
     if(e.target.id==='themeSelect'){prefs.theme=e.target.value;document.body.dataset.artwork=prefs.theme;savePrefs();imageCache.clear();render();if(ui.view==='atlas')renderAtlas();if(ui.view==='archive')renderArchive();toast('已切換美術風格。');}
   });
-  $('#importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>2*1024*1024)throw Error('存檔大小超過 2 MB');const restored=E.validateSave(JSON.parse(await f.text()),D);state=restored;ui.selected=0;ui.base=squad().at;ui.speed=0;save(true);closeModal();render();toast('已恢復 Web 存檔。');}catch(err){toast('無法匯入：'+err.message);}finally{e.target.value='';}});
+  $('#importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>2*1024*1024)throw Error('存檔大小超過 2 MB');const restored=E.validateSave(JSON.parse(await f.text()),D);if(restored.mode!=='native-original')throw Error('這是舊版試作存檔；請保留備份，0.5 使用原作戰役存檔');state=restored;battle=E.restoreOriginalBattle(state);ui.point=null;ui.selected=0;ui.base=squad().at;ui.speed=0;save(true);closeModal();render();resumeScene();toast('已恢復 Web 存檔。');}catch(err){toast('無法匯入：'+err.message);}finally{e.target.value='';}});
   $('#search').addEventListener('input',e=>{ui.query=e.target.value;ui.limit=48;renderArchive();});
-  $('#saveBtn').onclick=()=>save();$('#menuBtn').onclick=showSettings;$('#evidenceBtn').onclick=showEvidence;$('#helpBtn').onclick=showHelp;$('#originalBtn').onclick=original;$('#closeModal').onclick=closeModal;
+  $('#musicBtn').onclick=showMusic;$('#saveBtn').onclick=()=>save();$('#menuBtn').onclick=showSettings;$('#evidenceBtn').onclick=showEvidence;$('#helpBtn').onclick=showHelp;$('#originalBtn').onclick=original;$('#closeModal').onclick=closeModal;
   modal.addEventListener('cancel',e=>{e.preventDefault();closeModal();});
-  document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='Space'&&!modal.open){e.preventDefault();ui.speed=ui.speed?0:1;render();}if(/^[1-6]$/.test(e.key)&&!modal.open){ui.selected=+e.key-1;ui.base=squad().at;render();}});
+  document.addEventListener('keydown',e=>{invalidateWorld();if(['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName))return;if(e.code==='Space'&&!modal.open){e.preventDefault();ui.speed=ui.speed?0:1;render();}if(/^[1-6]$/.test(e.key)&&!modal.open){ui.point=null;ui.selected=+e.key-1;state.selectedSquad=ui.selected;ui.base=squad().at;state.viewCountry=D.bases[ui.base].countryIndexCandidate;render();}});
   $('.brand').onclick=e=>{e.preventDefault();setView('command');};
   // Canvas is projected in the original 160x100 world coordinate candidates.
   const canvas=$('#world'),ctx=canvas.getContext('2d');let hitBases=[],hitSquads=[],pointer=null,lastDraw=0;
@@ -207,6 +368,7 @@
   function clampPan(){const scale=mapScale(),maxX=Math.max(0,(1280*scale-1280)/2),maxY=Math.max(0,(800*scale-canvas.height)/2);ui.panX=Math.max(-maxX,Math.min(maxX,ui.panX));ui.panY=Math.max(-maxY,Math.min(maxY,ui.panY));}
   function focusOnBase(id){const b=D.bases[id],scale=mapScale();ui.panX=-(b.xCandidate*8-640)*scale;ui.panY=-(b.yCandidate*8-400)*scale;clampPan();}
   function project(x,y){const scale=mapScale();return {x:(x*8-640)*scale+640+ui.panX,y:(y*8-400)*scale+canvas.height/2+ui.panY};}
+  function selectWorldPoint(p){const scale=mapScale(),x=Math.floor(((p.x-640-ui.panX)/scale+640)/8),y=Math.floor(((p.y-canvas.height/2-ui.panY)/scale+400)/8);if(x<0||x>=128||y<0||y>=96)return;ui.point={x,y};ui.tab='city';const country=E.countryAt(state,x,y);if(country>=0&&D.countries[country])state.viewCountry=country;}
   function drawMap(now){
     const box=canvas.getBoundingClientRect();
     if(box.width<1||box.height<1)return;
@@ -217,9 +379,9 @@
     const bg=getImage('GMAP.PXS');
     if(bg?.complete&&bg.naturalWidth){ctx.save();ctx.translate(640+ui.panX,canvas.height/2+ui.panY);ctx.scale(mapScale(),mapScale());ctx.imageSmoothingEnabled=prefs.theme!=='hd';ctx.imageSmoothingQuality='high';ctx.globalAlpha=.9;ctx.drawImage(bg,-640,-400,1280,800);ctx.fillStyle='#0d241d';ctx.globalAlpha=.12;ctx.fillRect(-640,-400,1280,800);ctx.restore();}
     hitBases=[];hitSquads=[];
-    const selected=squad(),plan=selected.travel?{cells:selected.travel.cells.slice(selected.travel.cursor)}:ui.routes?E.routePlan(D,E.position(selected,D),ui.base):null;
+    const selected=squad(),plan=selected.travel?.original?E.routePlan(D,E.position(selected,D),selected.travel.to===null?selected.fieldDestination:selected.travel.to,selected.moveMode,state):selected.travel?{cells:selected.travel.cells.slice(selected.travel.cursor)}:ui.routes?E.routePlan(D,E.position(selected,D),ui.base,ui.travelMode??0,state):null;
     if(plan?.cells.length){ctx.strokeStyle='#f4d885';ctx.lineWidth=3;ctx.setLineDash([9,7]);ctx.beginPath();const w=D.mechanics.movement.width;plan.cells.map(i=>project(i%w,Math.floor(i/w))).forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke();ctx.setLineDash([]);}
-    D.bases.forEach(b=>{
+    D.bases.forEach(b=>{if(!baseVisible(b))return;
       const p=project(b.xCandidate,b.yCandidate);if(p.x<0||p.x>1280||p.y<0||p.y>canvas.height)return;
       const chosen=b.index===ui.base,hover=b.index===ui.hover;
       ctx.save();ctx.translate(p.x,p.y);ctx.rotate(Math.PI/4);ctx.fillStyle=chosen?'#ffdd80':'#e1ce91';ctx.strokeStyle='#423d22';ctx.lineWidth=1.7;ctx.fillRect(-3,-3,6,6);ctx.strokeRect(-3,-3,6,6);ctx.restore();
@@ -235,22 +397,22 @@
     if(ui.speed===0){ctx.fillStyle='#102219de';ctx.fillRect(20,canvas.height-56,125,30);ctx.fillStyle='#e6d18d';ctx.font='12px "Microsoft JhengHei"';ctx.textAlign='left';ctx.fillText('Ⅱ  時間已暫停',32,canvas.height-36);}
   }
   function canvasPoint(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)/r.width*1280,y:(e.clientY-r.top)/r.height*canvas.height};}
-  canvas.addEventListener('pointerdown',e=>{pointer={...canvasPoint(e),clientX:e.clientX,clientY:e.clientY,px:ui.panX,py:ui.panY,drag:false};canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointerdown',e=>{invalidateWorld();pointer={...canvasPoint(e),clientX:e.clientX,clientY:e.clientY,px:ui.panX,py:ui.panY,drag:false};canvas.setPointerCapture(e.pointerId);});
   canvas.addEventListener('pointermove',e=>{const p=canvasPoint(e);if(pointer){if(Math.hypot(e.clientX-pointer.clientX,e.clientY-pointer.clientY)>4)pointer.drag=true;if(pointer.drag){ui.panX=Math.max(-1000,Math.min(1000,pointer.px+p.x-pointer.x));ui.panY=Math.max(-650,Math.min(650,pointer.py+p.y-pointer.y));}}else{ui.hover=hitBases.find(b=>Math.hypot(p.x-b.x,p.y-b.y)<12)?.id??null;}});
-  canvas.addEventListener('pointerup',e=>{if(!pointer)return;const p=canvasPoint(e);if(!pointer.drag){const q=hitSquads.find(q=>Math.hypot(q.x-p.x,q.y-p.y)<18),b=hitBases.reduce((best,b)=>{const d=Math.hypot(b.x-p.x,b.y-p.y);return d<18&&(!best||d<best.d)?{...b,d}:best;},null);if(q){ui.selected=q.id;ui.base=squad().at;}else if(b){ui.base=b.id;ui.tab='city';}render();}pointer=null;});
+  canvas.addEventListener('pointerup',e=>{if(!pointer)return;const p=canvasPoint(e);if(!pointer.drag){const q=hitSquads.find(q=>Math.hypot(q.x-p.x,q.y-p.y)<18),b=hitBases.reduce((best,b)=>{const d=Math.hypot(b.x-p.x,b.y-p.y);return d<18&&(!best||d<best.d)?{...b,d}:best;},null);if(q){ui.point=null;ui.selected=q.id;state.selectedSquad=q.id;ui.base=squad().at;state.viewCountry=D.bases[ui.base].countryIndexCandidate;}else if(b){ui.point=null;ui.base=b.id;state.viewCountry=D.bases[b.id].countryIndexCandidate;ui.tab='city';}else if(state.mode==='native-original')selectWorldPoint(p);render();}pointer=null;});
   canvas.addEventListener('pointercancel',()=>pointer=null);
   function zoom(delta){ui.zoom=Math.max(1,Math.min(3,ui.zoom+delta));$('#zoomLabel').textContent=Math.round(ui.zoom*100)+'%';if(ui.zoom===1){ui.panX=0;ui.panY=0;}}
   canvas.addEventListener('wheel',e=>{e.preventDefault();zoom(e.deltaY>0?-.15:.15);},{passive:false});$('#zoomIn').onclick=()=>zoom(.25);$('#zoomOut').onclick=()=>zoom(-.25);$('#resetMap').onclick=()=>{ui.zoom=1;ui.panX=0;ui.panY=0;$('#zoomLabel').textContent='100%';};
   $('#toggleRoutes').onclick=()=>{ui.routes=!ui.routes;$('#toggleRoutes').setAttribute('aria-pressed',String(ui.routes));$('#toggleRoutes').textContent=ui.routes?'隱藏步行路線':'預覽步行路線';};
   let previous=performance.now(),elapsed=0,saveElapsed=0;
   function frame(now){const dt=Math.min(.2,(now-previous)/1000);previous=now;
-    if(battle?.phase==='active'&&autoBattle){battleElapsed+=dt;if(battleElapsed>=.8){battleElapsed=0;E.battleStep(state,battle);renderBattle();if(battle.phase!=='active'){save(true);render();}}}
-    if(ui.speed&&!modal.open&&!state.ended){elapsed+=dt*ui.speed;if(elapsed>=.8){const hours=Math.floor(elapsed/.8);elapsed-=hours*.8;E.step(state,D,hours);render();}}
+    if(battle?.phase==='active'&&autoBattle){battleElapsed+=dt;if(battleElapsed>=(battle.original ? 0.08 : 0.8)){battleElapsed=0;E.battleStep(state,battle);renderBattle();if(battle.phase!=='active'){save(true);render();}}}
+    if(ui.speed&&!modal.open&&!state.ended){const tickDuration=state.mode==='native-original' ? 0.08 : 0.8;elapsed=Math.min(8*tickDuration,elapsed+dt*ui.speed);if(elapsed>=tickDuration&&!worldPending){const ticks=Math.min(8,Math.floor(elapsed/tickDuration));elapsed-=ticks*tickDuration;if(state.mode==='native-original')requestWorld(ticks);else{E.step(state,D,ticks);render();}}}
     saveElapsed+=dt;if(saveElapsed>=15){saveElapsed=0;if(!battle||battle.phase!=='active')save(true);}
     if(ui.view==='command'&&now-lastDraw>33){drawMap(now);lastDraw=now;}
     requestAnimationFrame(frame);
   }
-  window.addEventListener('pagehide',()=>save(true));
-  document.addEventListener('visibilitychange',()=>{if(document.hidden){ui.speed=0;autoBattle=false;save(true);render();}});
-  render();renderAtlas();drawMap(performance.now());requestAnimationFrame(frame);if(!prefs.welcome)showWelcome();
+  window.addEventListener('pagehide',()=>{invalidateWorld();worldWorker?.terminate();worldWorker=null;worldPending=false;save(true);});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){invalidateWorld();ui.speed=0;autoBattle=false;save(true);render();}});
+  render();renderAtlas();drawMap(performance.now());requestAnimationFrame(frame);if(!prefs.welcome)showWelcome();else resumeScene();
 })();
