@@ -67,10 +67,10 @@
     }
     document.addEventListener('click',event=>{
       if(event.target.closest('[data-guide-item]'))return;
-      if(!event.target.closest('.visual-company,.pack-panel,.armory-tabs,.company-chips,.shop-catalog,.native-shop-categories,.drag-guide'))return;
+      if(!event.target.closest('[data-armory-action],.visual-company,.pack-panel,.armory-tabs,.company-chips,.shop-catalog,.native-shop-categories,.drag-guide'))return;
       if(suppressClick){event.preventDefault();event.stopImmediatePropagation();suppressClick=false;return;}
       const b=event.target.closest('[data-armory-action]');
-      if(b&&!b.disabled){event.preventDefault();a.invalidate();try{switch(b.dataset.armoryAction){
+      if(b&&!b.disabled){event.preventDefault();event.stopImmediatePropagation();a.invalidate();try{switch(b.dataset.armoryAction){
         case 'party':party=+b.dataset.party;manager();break;case 'peer':peer=+b.dataset.party;manager();break;
         case 'mode':view=b.dataset.mode;selection=null;manager();break;
         case 'vehicle':E.command(state(),D,{type:'transfer',kind:b.dataset.kind,squad:party,target:peer});committed();a.toast('載具移交完成');break;

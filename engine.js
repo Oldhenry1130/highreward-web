@@ -109,7 +109,7 @@
       BattleBridge.applyUnit(company,raw);
       for(const m of company.members){const bytes=unit.members[m.originalSlot].nameBytes,end=bytes.indexOf(0),name=new TextDecoder('big5').decode(Uint8Array.from(end<0?bytes:bytes.slice(0,end))).trim();if(name)m.name=name;}
     }
-    record(s,`${q.name}與${s.squads[target].name}完成${action.kind==='person'?'人員':'裝備／載具'}移交。`);
+    record(s,sourceId===target&&action.kind==='person'?`${q.name}調整成員位置 ${action.fromSlot+1} ↔ ${action.toSlot+1}。`:`${q.name}與${s.squads[target].name}完成${action.kind==='person'?'人員':'裝備／載具'}移交。`);
   }
   function equipmentStats(data,member){
     const weapon=data.items.find(x=>x.index===member.weapon&&x.equipmentSlot==='weapon'),armor=data.items.find(x=>x.index===member.armor&&x.equipmentSlot==='armor');
