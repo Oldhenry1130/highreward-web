@@ -3,7 +3,7 @@
   const D=window.HR_DATA,E=window.HREngine,$=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money=n=>Math.round(n).toLocaleString('en-US'),hex=n=>'0x'+n.toString(16).toUpperCase();
-  const icon=window.HRUI.icon;
+  const icon=window.HRUI.icon,Economy=window.HREconomy;
   const redraw=window.HR_REDRAWN||{assets:[],reviewed:0,total:595,complete:false};
   D.assets.push(...redraw.assets);
   const KEY='highreward.native.v4',LEGACY_KEYS=['highreward.native.v2','highreward.native.v1'],PREF='highreward.preferences.v1';
@@ -11,7 +11,7 @@
   if(!prefs.artworkVersion){prefs.theme='redrawn';prefs.artworkVersion=3;try{localStorage.setItem(PREF,JSON.stringify(prefs));}catch{}}
   if(window.HR_RELEASE?.online||!['hd','hd-ai','redrawn'].includes(prefs.theme))prefs.theme='redrawn';
   document.body.dataset.artwork=prefs.theme;
-  let state,loadError=null,initialRaw=null;try{initialRaw=localStorage.getItem(KEY)||localStorage.getItem('highreward.native.v3');if(initialRaw){try{if(!localStorage.getItem(KEY+'.before-0.6.2'))localStorage.setItem(KEY+'.before-0.6.2',initialRaw);}catch{}}state=E.validateSave(JSON.parse(initialRaw||'null'),D);}catch(error){loadError=initialRaw?error.message:null;state=E.newGame(D);}
+  let state,loadError=null,initialRaw=null;try{initialRaw=localStorage.getItem(KEY)||localStorage.getItem('highreward.native.v3');if(initialRaw){try{if(!localStorage.getItem(KEY+'.before-0.6.3'))localStorage.setItem(KEY+'.before-0.6.3',initialRaw);}catch{}}state=E.validateSave(JSON.parse(initialRaw||'null'),D);}catch(error){loadError=initialRaw?error.message:null;state=E.newGame(D);}
   try{if(!loadError&&!localStorage.getItem(KEY))localStorage.setItem(KEY,JSON.stringify(state));}catch{}
   const preferredSquad=state.story?.event?.type==='battle'?state.activeBattle?.squad:state.selectedSquad;
   const initialSquad=Number.isInteger(preferredSquad)&&preferredSquad>=0&&preferredSquad<6?preferredSquad:0;
@@ -22,7 +22,7 @@
   function requestWorld(ticks){
     if(worldPending)return;
     if(!worldWorker){
-      worldWorker=new Worker('world-worker.js?v=0.6.2');
+      worldWorker=new Worker('world-worker.js?v=0.6.3');
       worldWorker.onmessage=({data})=>{worldPending=false;if(data.generation!==worldGeneration)return;if(data.error){ui.speed=0;toast('世界運算已暫停：'+data.error);render();return;}const previousBase=state.squads[ui.selected].at;state=data.state;if(!ui.point&&ui.base===previousBase&&state.squads[ui.selected].at!==previousBase){ui.base=state.squads[ui.selected].at;state.viewCountry=D.bases[ui.base].countryIndexCandidate;}render();if(state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type)){save(true);renderStory();}};
       worldWorker.onerror=()=>{worldPending=false;ui.speed=0;worldWorker.terminate();worldWorker=null;toast('背景運算載入失敗，請重新整理後繼續。');render();};
     }
@@ -89,7 +89,7 @@
     if(e.name==='shop.grid'){renderOriginalShop(e);return;}
     const speaker=e.title||state.story.speaker||'傭兵團',face=state.story.speakerFace,faceImage=Number.isInteger(face)&&asset('FACE.MRG:'+face)?`<img class="story-portrait" src="${esc(portrait(face))}" alt="${esc(speaker)}">`:`<span class="story-portrait story-silhouette">${icon('people')}</span>`;
     const choices=e.options||[],history=state.story.history.slice(-4),options=choices.map(o=>{
-      const label=o.text??(o.classId===-1?'空位 '+(o.id+1):'替換 '+(D.classes.find(c=>c.index===o.classId)?.name||'成員')+' · 位置 '+(o.id+1));
+      const label=Economy.rewardText(o.text??(o.classId===-1?'空位 '+(o.id+1):'替換 '+(D.classes.find(c=>c.index===o.classId)?.name||'成員')+' · 位置 '+(o.id+1)),/報酬/.test(e.title||''));
       return `<button class="story-choice" data-story-value="${o.id}" ${e.type==='selection'&&o.classId!==-1?'data-story-replace="true"':''}>${icon(storyIcon(label))}<span>${esc(label)}</span></button>`;
     }).join('');
     let controls=options;
@@ -97,7 +97,7 @@
     if(['text','ending','quit'].includes(e.type))controls=graphicButton('storyNext','arrow',e.type==='quit'?'結束流程':'繼續','','primary');
     else if(e.type==='selection')controls+=`<button class="story-choice" data-story-value="65535">${icon('back')}<span>取消選擇</span></button>`;
     else if(['unresolved','fault'].includes(e.type))controls=`<p class="event-warning">事件已暫停，進度仍保留。請先備份存檔，以便修復接續。</p><p class="source">${esc(e.type+' · '+e.name+' · '+(e.message||''))}${e.source?' · '+esc(JSON.stringify(e.source)):''}</p><button data-action="export">備份目前存檔</button>`;
-    openModal(`<span class="eyebrow">HIGH REWARD · ORIGINAL STORY</span><div class="story-stage">${img('MAP'+String((D.bases[squad().at].countryIndexCandidate??0)+1).padStart(2,'0')+'.PXZ','story-background','所在地景象')}${faceImage}<div class="story-speaker">${esc(e.title||speaker)}</div></div><div class="story-text">${esc(e.lines?.join('\n')||e.text||(['menu.choose','menu.window','vehicle.shop'].includes(e.name)?'請選擇行動。':history[history.length-1]?.text)||'請選擇行動。')}</div><div class="story-choices">${controls}</div>`,'story');
+    openModal(`<span class="eyebrow">HIGH REWARD · ORIGINAL STORY</span><div class="story-stage">${img('MAP'+String((D.bases[squad().at].countryIndexCandidate??0)+1).padStart(2,'0')+'.PXZ','story-background','所在地景象')}${faceImage}<div class="story-speaker">${esc(e.title||speaker)}</div></div><div class="story-text">${esc(Economy.rewardText(e.lines?.join('\n')||e.text||(['menu.choose','menu.window','vehicle.shop'].includes(e.name)?'請選擇行動。':history[history.length-1]?.text)||'請選擇行動。'))}</div><div class="income-policy">任務／戰鬥／公演／劇情收益 ×5 · 支出與轉售維持原值</div><div class="story-choices">${controls}</div>`,'story');
   }
   function nativeDesk(){
     const q=squad();if(ui.tab==='missions')return `<div class="visual-heading">${icon('scroll')}<h3>原作委託</h3></div><div class="facility-grid">${townActionCards(a=>[65,66,67].includes(a.id))}</div>`;
@@ -107,7 +107,7 @@
     if(state.mode!=='native-original'||!window.OriginalContracts)return '';
     const decoded=window.OriginalContracts.decodeNativeTask(state.originalCampaign,window.OriginalStoryBridge.unitBytes(q,D),q.id);
     const tasks=decoded.tasks.concat(decoded.military.filter(m=>!decoded.tasks.some(t=>t.sourceOffset===m.sourceOffset)));
-    return tasks.map(task=>`<article class="native-task"><span>${icon('scroll')}</span><div><strong>${esc(task.title||task.name||task.kind)}</strong>${task.scope==='campaign'?'<small>全團共同委託</small>':''}${Number.isInteger(task.destinationId)&&D.bases[task.destinationId]?`<button class="mission-target" data-mission-target="${task.destinationId}" aria-label="定位任務目的地 ${esc(task.destinationName||D.bases[task.destinationId].name)}">${icon('map')}<span>${esc(task.destinationName||D.bases[task.destinationId].name)}<small>點此定位並閃爍目的地</small></span>${icon('arrow')}</button>`:task.destinationName||task.targetName?`<p>${esc(task.destinationName||task.targetName)}</p>`:''}${task.remainingDays!==undefined&&task.remainingDays!==null?`<small>期限剩餘 ${task.remainingDays} 日</small>`:''}${Number.isFinite(task.currentDurability)&&Number.isFinite(task.targetDurability)?`<small>據點耐久 ${task.currentDurability} / ${task.targetDurability}</small>`:''}${task.reward!==null&&task.reward!==undefined?`<b>${money(task.reward)} G</b>`:task.kind==='performance'?'<small>依演出結果結算</small>':''}</div></article>`).join('');
+    return tasks.map(task=>`<article class="native-task"><span>${icon('scroll')}</span><div><strong>${esc(task.title||task.name||task.kind)}</strong>${task.scope==='campaign'?'<small>全團共同委託</small>':''}${Number.isInteger(task.destinationId)&&D.bases[task.destinationId]?`<button class="mission-target" data-mission-target="${task.destinationId}" aria-label="定位任務目的地 ${esc(task.destinationName||D.bases[task.destinationId].name)}">${icon('map')}<span>${esc(task.destinationName||D.bases[task.destinationId].name)}<small>點此定位並閃爍目的地</small></span>${icon('arrow')}</button>`:task.destinationName||task.targetName?`<p>${esc(task.destinationName||task.targetName)}</p>`:''}${task.remainingDays!==undefined&&task.remainingDays!==null?`<small>期限剩餘 ${task.remainingDays} 日</small>`:''}${Number.isFinite(task.currentDurability)&&Number.isFinite(task.targetDurability)?`<small>據點耐久 ${task.currentDurability} / ${task.targetDurability}</small>`:''}${task.reward!==null&&task.reward!==undefined?`<b>報酬 ${money(Economy.amount(task.reward))} G <small>收益 ×5</small></b>`:task.kind==='performance'?'<small>依演出結果結算</small>':''}</div></article>`).join('');
   }
   function showMember(slot){const m=squad().members.find((m,i)=>(m.originalSlot??i)===slot);if(!m)return;openModal(`<div class="modal-hero"><img src="${esc(portrait(m.face))}" alt="${esc(m.name)}"><div><h2>${esc(m.name)}</h2><p>生命 ${m.hp} / ${m.maxHp} · 等級 ${m.level} · 疲勞 ${m.fatigue??0}</p><p>基本攻擊 ${m.attack} · 基本防禦 ${m.defense}</p>${['weapon','armor','consumable'].map(key=>{const item=D.items.find(i=>i.index===m[key]);return `<h3>${{weapon:'武器',armor:'防具',consumable:'持物'}[key]}：${esc(item?.name||'未裝備')}</h3>${item?itemStats(item):''}`;}).join('')}</div></div>`,'member');}
   function showTransfers(){armoryUI.show(ui.selected,'formation');}
@@ -120,6 +120,7 @@
   function showLoadRecovery(){openModal(`<h2>存檔暫時無法載入</h2><p>原始存檔已保留，不會以新戰役覆寫。請先匯出原始存檔，或匯入有效備份。</p><p class="source">${esc(loadError)}</p><div class="modal-actions"><button data-action="export">匯出原始存檔</button><button data-action="import">匯入備份</button><button data-action="reload">重試載入</button></div>`,'load-recovery');}
   function resumeScene(){
     if(loadError){showLoadRecovery();return;}
+    if(E.recoverDefeatedCompany(state,D)){battle=null;ui.base=squad().at;save(true);render();toast('戰敗部隊已撤回安全據點，可休養或前往病院。');}
     if(state.story?.event?.type==='fault'){
       try{const source=window.HR_ORIGINAL_STORY.StoryVM.restore(state.story.snapshot);if(source.canRecoverPresentationFault()){continueStory();return;}}
       catch{/* Keep an unrecognized or damaged snapshot on the existing diagnostic/backup screen. */}
@@ -239,10 +240,28 @@
   function openModal(html,kind='info'){ui.speed=0;modalKind=kind;modal.dataset.kind=kind;$('#modalContent').innerHTML=html;if(!modal.open)modal.showModal();render();}
   function exitBattle(){
     const finished=battle;if(!finished||finished.phase==='active')return;
+    ui.selected=finished.squad;ui.point=null;ui.base=state.squads[finished.squad].at;
     battle=null;ui.battleError='';ui.battleInspect=null;ui.battleClosePrompt=false;ui.battleReturnAfterRetreat=false;modal.close();modalKind='';armoryUI.clear();
     if(finished.original&&state.story?.event?.type==='battle')continueStory({value:finished.core.outcome,unitBytes:Array.from(finished.core.unitBytes),encounterBytes:Array.from(finished.core.encounterBytes),randomSeed:state.seed});else render();
   }
   function requestRetreat(returnAfter=false){try{E.finishBattle(state,battle,false);ui.battleClosePrompt=false;ui.battleReturnAfterRetreat=returnAfter;ui.battleError='';autoBattle=true;save(true);renderBattle();}catch(error){ui.battleError=error.message;autoBattle=false;renderBattle();}}
+  const battleActions=new Set(['battlePause','battleStep','retreat','withdrawMember','confirmBattleRetreat','cancelBattleClose','battleClose']);
+  // Handle controls inside the dialog, before unrelated document click handlers.
+  modal.addEventListener('click',event=>{
+    const button=event.composedPath().find(node=>node instanceof HTMLButtonElement);
+    if(modalKind!=='battle'||!button||!battleActions.has(button.dataset.action))return;
+    event.preventDefault();event.stopPropagation();invalidateWorld();battleInteracting=false;
+    try{switch(button.dataset.action){
+      case 'battlePause':autoBattle=!autoBattle;break;
+      case 'battleStep':autoBattle=false;E.battleStep(state,battle);save(true);render();break;
+      case 'retreat':requestRetreat();return;
+      case 'confirmBattleRetreat':requestRetreat(true);return;
+      case 'cancelBattleClose':ui.battleClosePrompt=false;autoBattle=ui.battleResumeAfterClose??true;break;
+      case 'withdrawMember':{const result=E.battleCommand(state,battle,{type:'withdraw-member',index:ui.battleInspect.index});if(!result?.accepted)throw Error('此成員目前無法個別撤退');save(true);break;}
+      case 'battleClose':exitBattle();return;
+    }ui.battleError='';}catch(error){autoBattle=false;ui.battleError=error.message;}
+    renderBattle();
+  },true);
   function closeModal(){
     if(loadError){showLoadRecovery();return;}
     if(battle?.phase==='active'){if(!ui.battleClosePrompt)ui.battleResumeAfterClose=autoBattle;ui.battleClosePrompt=true;autoBattle=false;renderBattle();return;}
@@ -274,14 +293,16 @@
     }).join(''):`<div class="battle-team ${side}">${members.map((m,i)=>`<div class="battle-unit ${m.hp?'':'dead'}">${sprite('BC32.MRG:'+(side==='allies'?i%4*3:9),m.name)}<div class="mini-bar"><i style="width:${m.hp/Math.max(1,m.maxHp)*100}%"></i></div><small>${m.hp}/${m.maxHp}</small></div>`).join('')}</div>`;
     let controls=b.phase==='active'
       ? graphicButton('battlePause',autoBattle?'pause':'play',autoBattle?'暫停戰鬥':'繼續戰鬥')+graphicButton('battleStep','arrow','單步推進')+graphicButton('retreat','back','撤退')
-      : graphicButton('battleClose','castle','返回本部','','primary');
+      : graphicButton('battleClose','castle',b.phase==='lost'?'撤回安全據點':'返回本部','','primary');
     if(b.original&&ui.battleInspect){const selected=ui.battleInspect,actor=b.core[selected.side]?.[selected.index];if(selected.side==='friendly'&&b.phase==='active'&&actor?.hp>0&&actor.state<28)controls+=graphicButton('withdrawMember','back','個別撤退');}
     if(ui.battleClosePrompt&&b.phase==='active')controls=`<div class="battle-close-prompt"><strong>戰鬥尚未結束，要下令撤退並返回事件嗎？</strong><small>撤退依原作規則結算，不會直接略過戰鬥。</small><div>${graphicButton('confirmBattleRetreat','back','撤退並返回','','primary')}${graphicButton('cancelBattleClose','sword','留在戰鬥')}</div></div>`;
-    if(!$('#battleDisplay'))$('#modalContent').innerHTML='<div id="battleDisplay"></div><div id="battleInspector"></div><details class="battle-details"><summary>戰鬥紀錄</summary><div id="battleLog" class="battle-log"></div></details><div id="battleControls" class="modal-actions"></div><p id="battleRule" class="battle-rule"></p>';
-    $('#battleDisplay').innerHTML=`<span class="eyebrow">HIGH REWARD · BATTLE</span><h2>${esc(state.squads[b.squad].name)}</h2><div class="battle-scene ${b.original?'original-scene':''} ${b.phase==='active'?'is-active':''}">${img('BSTAGE.MRG:'+(b.background??state.story?.event?.background??1),'battle-ground','原作戰鬥舞台')}<span class="battle-title">${esc(b.phase==='active'?'ENGAGED':b.phase==='won'?'VICTORY':'WITHDRAWAL')}</span><span class="battle-turn">TURN ${String(b.turn).padStart(2,'0')}</span>${team(b.allies,'allies')}${team(b.enemies,'enemies')}</div>${b.phase==='active'?'':`<div class="battle-result">${b.phase==='won'?'VICTORY':'RETREAT'}</div><p style="text-align:center">${b.phase==='won'?`${icon('coin')} ${money(b.reward)} G`:'部隊已撤回'}</p>`}`;
+    if(!$('#battleDisplay'))$('#modalContent').innerHTML='<div id="battleDisplay"></div><div id="battleInspector"></div><details class="battle-details"><summary>戰鬥紀錄</summary><div id="battleLog" class="battle-log"></div></details><div id="battleControls" class="battle-controls"><p id="battleStatus" role="status"></p><div id="battleButtons" class="battle-buttons"></div></div><p id="battleRule" class="battle-rule"></p>';
+    $('#battleDisplay').innerHTML=`<span class="eyebrow">HIGH REWARD · BATTLE</span><h2>${esc(state.squads[b.squad].name)}</h2><div class="battle-scene ${b.original?'original-scene':''} ${b.phase==='active'?'is-active':''}">${img('BSTAGE.MRG:'+(b.background??state.story?.event?.background??1),'battle-ground','原作戰鬥舞台')}<span class="battle-title">${esc(b.phase==='active'?'ENGAGED':b.phase==='won'?'VICTORY':'WITHDRAWAL')}</span><span class="battle-turn">TURN ${String(b.turn).padStart(2,'0')}</span>${team(b.allies,'allies')}${team(b.enemies,'enemies')}</div>${b.phase==='active'?'':`<div class="battle-result">${b.phase==='won'?'VICTORY':'RETREAT'}</div><p style="text-align:center">${b.phase==='won'?`${icon('coin')} ${money(b.reward)} G`:'戰鬥已結束，完成後續事件即可撤回安全據點。'}</p>`}`;
     $('#battleInspector').innerHTML=(b.original&&ui.battleInspect?battleInspection(b):'')+(ui.battleError?`<p class="event-warning">戰鬥已暫停：${esc(ui.battleError)}。可先備份存檔，再重新整理。</p>`:'');
     $('#battleLog').innerHTML=b.log.slice(0,8).map(l=>`<div>${esc(l)}</div>`).join('');
-    if($('#battleControls').dataset.content!==controls){$('#battleControls').innerHTML=controls;$('#battleControls').dataset.content=controls;}
+    if($('#battleButtons').dataset.content!==controls){$('#battleButtons').innerHTML=controls;$('#battleButtons').dataset.content=controls;}
+    const retreating=b.original&&(b.core.leaderDown||b.core.friendly.some(a=>a.classId>=0&&a.classId<=5&&a.state>=28));
+    const statusText=ui.battleError?'已暫停：'+ui.battleError:b.phase!=='active'?(b.phase==='lost'?'戰鬥結束，請撤回安全據點。':'戰鬥結束，請接續事件。'):ui.battleClosePrompt?'請選擇撤退或留在戰鬥。':!autoBattle?'已暫停；按繼續戰鬥，或單步推進一回合。':retreating?'撤退中，正在等待部隊退場。':'戰鬥進行中';if($('#battleStatus').textContent!==statusText)$('#battleStatus').textContent=statusText;
     $('#battleRule').textContent=b.original?'原作命中、射速、傷害、陣形與退場規則':'戰鬥試作 · 暫定規則';
   }
   function battleInspection(b){const selected=ui.battleInspect,a=b.core[selected.side]?.[selected.index];if(!a||a.classId===-1)return '';return `<div class="battle-inspection"><strong>${esc(b.names[selected.side][selected.index])}</strong><span>生命 ${a.hp}/${a.maxHp} · 等級 ${a.level} · 攻擊 ${a.attack} · 防禦 ${a.defense}</span><span>武器威力 ${a.power} · 防護 ${a.armor} · 射速 ${a.rate} · 累積 ${a.counter}</span></div>`;}

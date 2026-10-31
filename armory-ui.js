@@ -65,7 +65,7 @@
       }catch(e){a.toast(e.message);return false;}
     }
     document.addEventListener('click',event=>{
-      if(!event.target.closest('.visual-company,.pack-panel,.armory-tabs,.company-chips,.shop-catalog,.native-shop-categories,.modal-actions,.drag-guide'))return;
+      if(!event.target.closest('.visual-company,.pack-panel,.armory-tabs,.company-chips,.shop-catalog,.native-shop-categories,.drag-guide'))return;
       if(suppressClick){event.preventDefault();event.stopImmediatePropagation();suppressClick=false;return;}
       const b=event.target.closest('[data-armory-action]');
       if(b&&!b.disabled){event.preventDefault();a.invalidate();try{switch(b.dataset.armoryAction){

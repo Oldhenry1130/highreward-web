@@ -56,7 +56,7 @@
     b.log=b.log.slice(0,25);decorate(b);
     if(b.core.outcome!==null&&!b.settled){
       b.settled=true;b.phase=b.core.outcome===1?'won':'lost';applyUnit(q,b.core.unitBytes);
-      if(b.core.outcome===1){const result=Campaign.settleVictory(s.money,s.ledger||Array(96).fill(0),q.id,b.core.experienceTotal>>>0);s.money=result.cash;s.ledger=result.ledger;b.reward=result.reward;}
+      if(b.core.outcome===1){const factor=s.economy?.incomeMultiplier===5?5:1,base=b.core.experienceTotal>>>0,award=factor===5?Math.min(base*5,Math.max(0,99999999-s.money)):base;const result=Campaign.settleVictory(s.money,s.ledger||Array(96).fill(0),q.id,award);s.money=result.cash;s.ledger=result.ledger;b.reward=result.reward;}
     }
     return b;
   }

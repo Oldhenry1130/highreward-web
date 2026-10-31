@@ -3,6 +3,7 @@
 (function (scope) {
   'use strict';
   const VERSION = 4;
+  const Economy=typeof module!=='undefined'&&module.exports?require('./economy.js'):scope.HREconomy;
   const Armory=typeof module!=='undefined'&&module.exports?require('./armory.js'):scope.HRArmory;
   const Transport=typeof module!=='undefined'&&module.exports?require('./original-transport.js'):scope.OriginalTransport;
   const Combat=typeof module!=='undefined'&&module.exports?require('./original-combat.js'):scope.OriginalCombat;
@@ -359,7 +360,7 @@
     return b;
   }
   function finishBattle(s,b,win){
-    if(b.original){const result=BattleBridge.command(b,{type:'retreat'});if(!result?.accepted)throw Error('部隊目前無法下達撤退');s.activeBattle=BattleBridge.snapshot(b);return;}
+    if(b.original){if(b.phase==='active'&&b.core.leaderDown){s.activeBattle=BattleBridge.snapshot(b);return;}const result=BattleBridge.command(b,{type:'retreat'});if(!result?.accepted&&result?.reason!=='leader-already-leaving')throw Error('部隊目前無法下達撤退');s.activeBattle=BattleBridge.snapshot(b);return;}
     if(b.phase!=='active')return;
     b.phase=win?'won':'lost';
     const q=s.squads[b.squad];q.members.forEach((m,i)=>m.hp=Math.max(1,b.allies[i].hp));
@@ -378,7 +379,7 @@
     if(value.ledger&&(!Array.isArray(value.ledger)||value.ledger.length!==96||value.ledger.some(n=>!Number.isSafeInteger(n)||n<0||n>0xffffffff)))throw Error('原作帳目無效');
     if(value.activeBattle)BattleBridge.validateSnapshot(value.activeBattle);
     if(value.cheatsUsed!==undefined&&(!Number.isSafeInteger(value.cheatsUsed)||value.cheatsUsed<0))throw Error('密技紀錄無效');
-    if(value.mode==='native-original')StoryBridge.validate(value,data);
+    if(value.mode==='native-original'){StoryBridge.validate(value,data);Economy.configure(value);}
     value.squads.forEach((q,i)=>{
       Armory.validate(q,data);
       if(q.id!==i||!Number.isInteger(q.at)||!data.bases[q.at]||!Array.isArray(q.members)||!q.members.length||q.members.length>12)throw Error('部隊資料無效');
@@ -417,11 +418,28 @@
     return clone(value);
   }
   function restoreOriginalBattle(s){ensureOriginalBattle(s,s.story?.event);return s.activeBattle?BattleBridge.restore(s,s.activeBattle):null;}
+  // Web recovery: run only after the source loss story has completed. Keep
+  // casualties and equipment; a downed protagonist returns with one HP.
+  function recoverDefeatedCompany(s,data){
+    const b=s.activeBattle,event=s.story?.event,key=b?.storyEventKey;
+    if(s.mode!=='native-original'||s.ended||!b?.settled||b.phase!=='lost'||!key||s.recoveredBattleKey===key||!['complete','tick-complete'].includes(event?.type))return null;
+    const q=s.squads[b.squad];if(!q||q.active!==1)return null;
+    const leaders=q.members.filter(m=>(m.classId??m.face)<=5),needsRecovery=leaders.some(m=>m.hp<=0||(m.fatigue??0)>=100)||q.originalOrder===1||q.originalOrder===9;
+    if(!needsRecovery){s.recoveredBattleKey=key;return null;}
+    const safe=id=>Number.isInteger(id)&&data.bases[id]&&[0,1,4].includes(s.world?.bases[id]?.kind??data.original.transport.bases[id]?.kind);
+    let base=[q.lastSafeBase,q.at,q.retreatBase,44].find(safe);
+    if(base===undefined){const point=position(q,data);base=data.bases.filter(x=>safe(x.index)).sort((a,b)=>Math.hypot(a.xCandidate-point.x,a.yCandidate-point.y)-Math.hypot(b.xCandidate-point.x,b.yCandidate-point.y))[0]?.index;}
+    if(base===undefined)return null;
+    const target=data.bases[base];for(const m of leaders){if(m.hp<=0)m.hp=1;m.fatigue=Math.min(m.fatigue??0,90);}
+    Object.assign(q,{at:base,currentBase:base,lastSafeBase:base,retreatBase:base,destinationBase:base,raw45:base,targetX:target.xCandidate,targetY:target.yCandidate,originalX10:target.xCandidate*10,originalY10:target.yCandidate*10,originalOrder:2,moveMode:0,subtype:0,order:'idle',position:null,route:[],travel:null,fieldDestination:null,progress:0});
+    s.recoveredBattleKey=key;StoryBridge.synchronize(s,data);record(s,`${q.name}戰敗後撤回${target.name}；倒下的隊長以 1 HP 恢復，請駐留休養或到病院治療。`);
+    return {squad:q.id,base};
+  }
   function storyEvent(s,data,request){if(s.ended)throw Error('戰役已結束，可重看片尾或建立新戰役');const event=StoryBridge.dispatch(s,data,request);ensureOriginalBattle(s,event);return event;}
-  function storyResume(s,data,response){const event=StoryBridge.resume(s,data,response);if(event.type==='complete'&&s.pendingNativeCommand){const pending=s.pendingNativeCommand,allowed=!s.pendingNativeCommandRequiresZero||event.registers.ax===0;delete s.pendingNativeCommand;delete s.pendingNativeCommandRequiresZero;if(allowed)command(s,data,pending);}const current=s.story?.event||event;ensureOriginalBattle(s,current);return current;}
+  function storyResume(s,data,response){const event=StoryBridge.resume(s,data,response);if(event.type==='complete'&&s.pendingNativeCommand){const pending=s.pendingNativeCommand,allowed=!s.pendingNativeCommandRequiresZero||event.registers.ax===0;delete s.pendingNativeCommand;delete s.pendingNativeCommandRequiresZero;if(allowed)command(s,data,pending);}const current=s.story?.event||event;ensureOriginalBattle(s,current);recoverDefeatedCompany(s,data);return current;}
   function battleCommand(s,b,input){const result=BattleBridge.command(b,input);s.activeBattle=BattleBridge.snapshot(b);return result;}
   function townActions(s,data,partyId){return StoryBridge.townActions(s,data,partyId);}
   function countryAt(s,x,y){return StoryBridge.countryAt(s,x,y);}
-  const api={VERSION,newGame,route,routePlan,movementGrid,position,atBase,transportUnit,movementOptions,commandAvailability,vehiclesAt,equipmentStats,offers,step,command,manageStock,cheatMoney,beginBattle,beginOriginalBattle,restoreOriginalBattle,battleStep,finishBattle,battleCommand,storyEvent,storyResume,townActions,countryAt,validateSave,clone};
+  const api={VERSION,newGame,route,routePlan,movementGrid,position,atBase,transportUnit,movementOptions,commandAvailability,vehiclesAt,equipmentStats,offers,step,command,manageStock,cheatMoney,beginBattle,beginOriginalBattle,restoreOriginalBattle,recoverDefeatedCompany,battleStep,finishBattle,battleCommand,storyEvent,storyResume,townActions,countryAt,validateSave,clone};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else scope.HREngine=api;
 })(typeof window==='undefined'?globalThis:window);

@@ -130,6 +130,18 @@ class StoryVM{
   canRecoverPresentationFault(){const p=this.pending,row=p?.instruction;
     return p?.type==='fault'&&p.name==='instruction.unsupported'&&p.message==='Original hardware/DOS I/O is blocked'&&Array.isArray(row)&&p.source?.segment===0x2268&&p.source.offset===row[1]&&this.r.ip===row[1]+row[3]&&this.presentationWrite(row)&&JSON.stringify(row)===JSON.stringify(DATA.instructions[row[0]*16+row[1]]);
   }
+  applyIncomePolicy(address){
+    if(this.options.incomeMultiplier!==5)return;
+    // Source 198A:0005: signed cash credit/debit, followed by the original cap.
+    // Trade-in/refund code uses separate C18/C20 writes and is not intercepted.
+    let index;
+    if(address===(LOAD+0x198a)*16+5)index=0;
+    // Source 198A:0187: accounting only. Expenses/categories 4 and 5 stay raw.
+    else if(address===(LOAD+0x198a)*16+0x187){const a=this.args(4);if(![0,1,2,3,6,7,8].includes(a[1]))return;index=2;}
+    else return;
+    const target=this.address(this.r.ss,this.r.sp+4+index*2),value=this.memread(target,4)|0;
+    if(value>0)this.memwrite(target,4,Math.min(0x7fffffff,value*5));
+  }
   resume(response={}){if(!this.pending)throw Error('No pending original event');
     if(this.pending.type==='fault'){if(!this.canRecoverPresentationFault())throw Error('Original instruction fault has no verified repair');this.pending=null;return this.run();}
     const p=this.pending;this.pending=null;
@@ -202,6 +214,7 @@ class StoryVM{
       const stub=DATA.stubs[a];if(stub){this.r.cs=stub[0];this.r.ip=stub[1];continue;}
       if(HOSTS[a]&&!(HOSTS[a].kind==='selection'&&this.args(4)[3]!==3)){const event=this.boundary(HOSTS[a]);if(event)return event;continue;}
       const row=DATA.instructions[a];if(!row){this.pending={type:'unresolved',name:'instruction.missing',source:{segment:this.r.cs-LOAD,offset:this.r.ip},args:this.args(8)};return this.pending;}
+      this.applyIncomePolicy(a);
       const[decodedSegment,off,mn,len,...ops]=row;this.decodeBias=(decodedSegment-this.r.cs)*16;this.lastTrace.push([this.r.cs,this.r.ip,mn]);if(this.lastTrace.length>32)this.lastTrace.shift();this.reg('ip',this.r.ip+len);
       try{if(!this.presentationWrite(row))this.execute(mn,ops,len);}catch(error){this.pending={type:'fault',name:'instruction.unsupported',message:error.message,source:{segment:this.r.cs-LOAD,offset:off},instruction:row,trace:clone(this.lastTrace)};return this.pending;}
     }

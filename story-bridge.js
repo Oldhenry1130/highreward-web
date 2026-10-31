@@ -1,8 +1,8 @@
 /* Synchronize original event execution with the native campaign and game UI. */
 (function(root,factory){
-  if(typeof module==='object'&&module.exports)module.exports=factory(require('./original-story.js'),require('./original-transport.js'),require('./battle-bridge.js'),require('./original-campaign.js'));
-  else root.OriginalStoryBridge=factory(root.HR_ORIGINAL_STORY,root.OriginalTransport,root.OriginalBattleBridge,root.OriginalCampaign);
-})(typeof globalThis==='undefined'?this:globalThis,function(Story,Transport,Battle,Campaign){
+  if(typeof module==='object'&&module.exports)module.exports=factory(require('./original-story.js'),require('./original-transport.js'),require('./battle-bridge.js'),require('./original-campaign.js'),require('./economy.js'));
+  else root.OriginalStoryBridge=factory(root.HR_ORIGINAL_STORY,root.OriginalTransport,root.OriginalBattleBridge,root.OriginalCampaign,root.HREconomy);
+})(typeof globalThis==='undefined'?this:globalThis,function(Story,Transport,Battle,Campaign,Economy){
   'use strict';
   const clone=v=>JSON.parse(JSON.stringify(v));
   const text=bytes=>new TextDecoder('big5').decode(Uint8Array.from(bytes).subarray(0,bytes.indexOf(0)<0?bytes.length:bytes.indexOf(0))).trim();
@@ -30,7 +30,7 @@
       q.currentBase=u.targetBase;q.retreatBase=u.retreatBase;q.raw45=u.raw45;q.destinationBase=u.destinationBase;q.targetX=u.targetX;q.targetY=u.targetY;
       q.formation=raw[65];for(const key of ['tankId','planeId','cannonId','tankDurability','planeDurability'])q[key]=u[key];
       if(u.targetBase>=0&&data.bases[u.targetBase])q.at=u.targetBase;
-      if(u.order===2){q.position=null;q.order='idle';q.route=[];q.fieldDestination=null;q.travel=null;q.progress=0;}
+      if(u.order===2){q.position=null;q.order='idle';q.route=[];q.fieldDestination=null;q.travel=null;q.progress=0;if(data.bases[u.targetBase])q.lastSafeBase=u.targetBase;}
       else if([0,1,6,9].includes(u.order)){
         const dest=data.bases.find(b=>b.xCandidate===u.targetX&&b.yCandidate===u.targetY);
         q.position={x:u.x10/10,y:u.y10/10};
@@ -47,6 +47,7 @@
       minimumRepayment:s.minimumRepayment,bankCollectorStrength:s.bankCollectorStrength});
   }
   function initial(s,data,seed){
+    Economy.configure(s);
     const baseline=Story.newGameBaseline();fromVM(s,data,baseline.state);
     if(seed!==undefined)s.seed=seed&65535;
     s.story={snapshot:baseline.snapshot,event:null,history:[],speaker:'',pendingOpeningEvents:true};
@@ -70,12 +71,12 @@
   }
   function dispatch(s,data,request){
     if(s.story?.event&&!['complete','tick-complete'].includes(s.story.event.type))throw Error('請先完成目前的原作事件');
-    const vm=s.story?.snapshot?Story.StoryVM.restore(s.story.snapshot):new Story.StoryVM();s.story??={history:[],speaker:''};toVM(s,data,vm);
+    const vm=s.story?.snapshot?Story.StoryVM.restore(s.story.snapshot,{incomeMultiplier:Economy.MULTIPLIER}):new Story.StoryVM({incomeMultiplier:Economy.MULTIPLIER});s.story??={history:[],speaker:''};toVM(s,data,vm);
     return automatic(s,data,vm,request.kind==='townAction'?vm.activateTask(request):vm.dispatch(request));
   }
   function resume(s,data,response={}){
     if(!s.story?.snapshot)throw Error('沒有進行中的原作事件');
-    const previous=s.story.event,vm=Story.StoryVM.restore(s.story.snapshot);toVM(s,data,vm);const event=automatic(s,data,vm,vm.resume(response));if(previous?.type==='quit'&&event.type==='complete')s.ended='quit';return event;
+    const previous=s.story.event,vm=Story.StoryVM.restore(s.story.snapshot,{incomeMultiplier:Economy.MULTIPLIER});toVM(s,data,vm);const event=automatic(s,data,vm,vm.resume(response));if(previous?.type==='quit'&&event.type==='complete')s.ended='quit';return event;
   }
   function townActions(s,data,partyId){const vm=s.story?.snapshot?Story.StoryVM.restore(s.story.snapshot):new Story.StoryVM();toVM(s,data,vm);return Story.townActions(vm,partyId);}
   function countryAt(s,x,y){
@@ -84,7 +85,7 @@
   }
   function tick(s,data){
     if(s.story?.event&&s.story.event.type!=='complete'&&s.story.event.type!=='tick-complete')return s.story.event;
-    const vm=s.story?.snapshot?Story.StoryVM.restore(s.story.snapshot):new Story.StoryVM();toVM(s,data,vm);s.story??={history:[],speaker:''};
+    const vm=s.story?.snapshot?Story.StoryVM.restore(s.story.snapshot,{incomeMultiplier:Economy.MULTIPLIER}):new Story.StoryVM({incomeMultiplier:Economy.MULTIPLIER});toVM(s,data,vm);s.story??={history:[],speaker:''};
     return automatic(s,data,vm,vm.startWorldTick());
   }
   function validate(s,data){
@@ -96,5 +97,6 @@
     if(!s.calendar||!Number.isInteger(s.calendar.year)||s.calendar.year<0||!Number.isInteger(s.calendar.month)||s.calendar.month<1||s.calendar.month>12||!Number.isInteger(s.calendar.day)||s.calendar.day<1||s.calendar.day>28)throw Error('原作日期無效');
     Story.StoryVM.restore(snap);return true;
   }
-  return Object.freeze({initial,fromVM,toVM,unitBytes,dispatch,resume,townActions,countryAt,tick,validate,source:Story.mainSha256});
+  function synchronize(s,data){const source=Story.StoryVM.restore(s.story.snapshot);toVM(s,data,source);fromVM(s,data,source.nativeState());s.story.snapshot=source.snapshot();}
+  return Object.freeze({initial,fromVM,toVM,unitBytes,dispatch,resume,townActions,countryAt,tick,validate,synchronize,source:Story.mainSha256});
 });
