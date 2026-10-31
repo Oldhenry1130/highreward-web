@@ -144,13 +144,15 @@
     for(let i=0;i<27;i++)if(i!==20&&i!==25&&i!==26){left[i]=b[i];right[i]=a[i];}
     return {a:left,b:right,nameA:Array.from(nameB),nameB:Array.from(nameA)};
   }
-  function transferPersonnel(units,sourceId,sourceSlot,targetId,targetSlot,baseId){
+  function transferPersonnel(units,sourceId,sourceSlot,targetId,targetSlot,baseId,options={}){
     const source=units[sourceId],target=units[targetId];
     if(!docked(source,baseId)||!docked(target,baseId))return {ok:false,reason:'not-docked-together'};
     if(!Number.isInteger(sourceSlot)||!Number.isInteger(targetSlot)||sourceSlot<0||targetSlot<0||sourceSlot>10||targetSlot>10)return {ok:false,reason:'invalid-member-slot'};
     const a=source.members[sourceSlot],b=target.members[targetSlot];
     if(!a||empty(a.classId))return {ok:false,reason:'empty-source-slot'};
-    if(a.classId<=5||(b&&!empty(b.classId)&&b.classId<=5))return {ok:false,reason:'protected-company-leader'};
+    // Web extension: a captain may change seats within their own company.
+    // The original transfer rule stays the default and always applies across companies.
+    if((a.classId<=5||(b&&!empty(b.classId)&&b.classId<=5))&&!(sourceId===targetId&&options.allowLeaderReorder===true))return {ok:false,reason:'protected-company-leader'};
     const left={...(b||{classId:-1})},right={...a};
     for(const key of ['formationSlot','raw25','raw26']){left[key]=a[key];right[key]=b?.[key];}
     if(a.rawBytes&&b?.rawBytes){const records=swapMemberRecords(a.rawBytes,b.rawBytes,a.nameBytes||new Array(12).fill(0),b.nameBytes||new Array(12).fill(0));left.rawBytes=records.a;right.rawBytes=records.b;left.nameBytes=records.nameA;right.nameBytes=records.nameB;}

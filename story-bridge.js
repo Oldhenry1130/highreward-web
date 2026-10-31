@@ -25,7 +25,7 @@
     if(JSON.stringify(s.world?.bases)!==JSON.stringify(bases))s.world={bases,revision:(s.world?.revision||0)+1};
     native.parties.forEach((raw,i)=>{
       const q=s.squads[i],u=Transport.decodeUnit(raw),oldX=q.originalX10,oldY=q.originalY10;Battle.applyUnit(q,raw);
-      for(const m of q.members){const offset=0x34D3+12*(i*11+m.originalSlot),name=text(bytes.slice(offset,offset+12));if(name)m.name=name;}
+      for(const m of q.members){const offset=0x34D3+12*(i*11+m.originalSlot),name=text(bytes.slice(offset,offset+12));if(name&&name.replaceAll('•','‧')!==m.name.replaceAll('•','‧'))m.name=name;}
       q.originalX10=u.x10;q.originalY10=u.y10;q.originalOrder=u.order;q.moveMode=u.moveMode;q.subtype=u.subtype;q.active=u.active;
       q.currentBase=u.targetBase;q.retreatBase=u.retreatBase;q.raw45=u.raw45;q.destinationBase=u.destinationBase;q.targetX=u.targetX;q.targetY=u.targetY;
       q.formation=raw[65];for(const key of ['tankId','planeId','cannonId','tankDurability','planeDurability'])q[key]=u[key];

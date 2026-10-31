@@ -89,14 +89,14 @@
         const p=85+slot*27,r=raw.slice(p,p+27),view=new DataView(Uint8Array.from(r).buffer);
         return {classId:view.getInt16(0,true),hp:view.getInt16(2,true),maxHp:view.getInt16(4,true),fatigue:view.getInt16(18,true),formationSlot:r[20],
           weapon:r[21]===255?-1:r[21],armor:r[22]===255?-1:r[22]+23,third:r[23]===255?-1:r[23]+40,thirdCount:r[24],raw25:r[25],raw26:r[26],rawBytes:r,
-          nameBytes:s.originalCampaign.slice(0x34D3+12*(company.id*11+slot),0x34D3+12*(company.id*11+slot)+12)};
+          nameBytes:s.originalCampaign.slice(0x34D3+12*(company.id*11+slot),0x34D3+12*(company.id*11+slot)+12),displayName:company.members.find((m,i)=>(m.originalSlot??i)===slot)?.name};
       });return unit;
     });
     let result;
     if(['tank','plane','cannon'].includes(action.kind))result=Transport.transferVehicle(units,sourceId,target,action.kind,base);
-    else if(action.kind==='person')result=Transport.transferPersonnel(units,sourceId,action.fromSlot,target,action.toSlot,base);
+    else if(action.kind==='person')result=Transport.transferPersonnel(units,sourceId,action.fromSlot,target,action.toSlot,base,{allowLeaderReorder:sourceId===target});
     else result=Transport.transferEquipment(units,sourceId,action.fromSlot,target,action.toSlot,action.kind,base,data.items,data.original.transport.equipmentCompatibility);
-    if(!result.ok)throw Error(({'not-docked-together':'兩隊必須駐留在同一據點','protected-company-leader':'原作隊長不可移交或取代','untransferable-tank7':'這輛特殊戰車不能移交','empty-source-slot':'來源位置沒有可移交的物品或成員','empty-member-slot':'請選擇兩名有效成員','incompatible-equipment':'成員無法裝備交換後的物品','same-unit':'載具請移交至另一支部隊'})[result.reason]||'目前無法進行這項移交');
+    if(!result.ok)throw Error(({'not-docked-together':'兩隊必須駐留在同一據點','protected-company-leader':'隊長可在本隊換位，不能跨隊移交或取代','untransferable-tank7':'這輛特殊戰車不能移交','empty-source-slot':'來源位置沒有可移交的物品或成員','empty-member-slot':'請選擇兩名有效成員','incompatible-equipment':'成員無法裝備交換後的物品','same-unit':'載具請移交至另一支部隊'})[result.reason]||'目前無法進行這項移交');
     for(const id of new Set([sourceId,target])){
       const company=s.squads[id],unit=result.units[id];
       if(['tank','plane','cannon'].includes(action.kind)){applyTransport(company,unit);continue;}
@@ -107,7 +107,7 @@
         const name=0x34D3+12*(id*11+slot);for(let i=0;i<12;i++)s.originalCampaign[name+i]=m.nameBytes[i];
       });
       BattleBridge.applyUnit(company,raw);
-      for(const m of company.members){const bytes=unit.members[m.originalSlot].nameBytes,end=bytes.indexOf(0),name=new TextDecoder('big5').decode(Uint8Array.from(end<0?bytes:bytes.slice(0,end))).trim();if(name)m.name=name;}
+      for(const m of company.members){const entry=unit.members[m.originalSlot],bytes=entry.nameBytes,end=bytes.indexOf(0),name=entry.displayName||new TextDecoder('big5').decode(Uint8Array.from(end<0?bytes:bytes.slice(0,end))).trim();if(name)m.name=name;}
     }
     record(s,sourceId===target&&action.kind==='person'?`${q.name}調整成員位置 ${action.fromSlot+1} ↔ ${action.toSlot+1}。`:`${q.name}與${s.squads[target].name}完成${action.kind==='person'?'人員':'裝備／載具'}移交。`);
   }
