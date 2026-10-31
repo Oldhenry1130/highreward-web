@@ -54,7 +54,10 @@
     return s;
   }
   function commit(s,data,vm,event){
+    const before={money:s.money,ledger:s.ledger?.slice()};
     fromVM(s,data,vm.nativeState());s.story??={history:[]};s.story.snapshot=vm.snapshot();s.story.event=event;s.story.eventSerial=(s.story.eventSerial||0)+1;
+    const receipt=Economy.incomeReceipt(before,s,s.story.eventSerial);
+    if(receipt){s.story.incomeReceipt=receipt;s.log??=[];s.log.unshift({day:s.day,text:`收益入帳 ＋${receipt.credited.toLocaleString('en-US')} G（收益 ×${receipt.multiplier}；資金 ${receipt.before.toLocaleString('en-US')} → ${receipt.after.toLocaleString('en-US')} G）。`});s.log=s.log.slice(0,80);}
     if(event.type==='complete'&&event.ending?.id==='debtCleared')s.ended='won';
     if(event.type==='complete'&&event.worldFrames)s.story.pendingOpeningEvents=false;
     return event;
@@ -62,21 +65,21 @@
   function automatic(s,data,vm,event){
     for(let count=0;count<10000;count++){
       if(event.type==='speaker'){s.story.speaker=event.text;s.story.speakerFace=event.args[2];s.story.speakerLayout=event.args[3];event=vm.resume();}
-      else if(event.type==='effect'){if(event.name==='dialogue.end'&&event.args[0]===s.story.speakerLayout){s.story.speaker='';s.story.speakerFace=null;}event=vm.resume();}
+      else if(event.type==='effect'){if(event.name==='dialogue.end'){s.story.rewardContext=false;if(event.args[0]===s.story.speakerLayout){s.story.speaker='';s.story.speakerFace=null;}}event=vm.resume();}
       else if(event.type==='random'){const low=event.range.min,high=event.range.maxExclusive;const value=low+Math.floor(Campaign.random32768(s)*(high-low)/32768);vm.applyNativeState({randomSeed:s.seed});event=vm.resume({value});}
       else if(event.type==='budget'){event=vm.run();}
-      else{if(event.type==='text'){s.story.history.push({speaker:s.story.speaker||'',text:event.text});s.story.history=s.story.history.slice(-80);}return commit(s,data,vm,event);}
+      else{if(event.type==='text'){s.story.rewardContext=!!s.story.rewardContext||Economy.isRewardText(event.text);s.story.history.push({speaker:s.story.speaker||'',text:event.text});s.story.history=s.story.history.slice(-80);}else s.story.rewardContext=false;return commit(s,data,vm,event);}
     }
     throw Error('原作事件自動處理超出上限');
   }
   function dispatch(s,data,request){
     if(s.story?.event&&!['complete','tick-complete'].includes(s.story.event.type))throw Error('請先完成目前的原作事件');
-    const vm=s.story?.snapshot?Story.StoryVM.restore(s.story.snapshot,{incomeMultiplier:Economy.MULTIPLIER}):new Story.StoryVM({incomeMultiplier:Economy.MULTIPLIER});s.story??={history:[],speaker:''};toVM(s,data,vm);
+    const vm=s.story?.snapshot?Story.StoryVM.restore(s.story.snapshot,{incomeMultiplier:Economy.MULTIPLIER}):new Story.StoryVM({incomeMultiplier:Economy.MULTIPLIER});s.story??={history:[],speaker:''};s.story.rewardContext=false;toVM(s,data,vm);
     return automatic(s,data,vm,request.kind==='townAction'?vm.activateTask(request):vm.dispatch(request));
   }
   function resume(s,data,response={}){
     if(!s.story?.snapshot)throw Error('沒有進行中的原作事件');
-    const previous=s.story.event,vm=Story.StoryVM.restore(s.story.snapshot,{incomeMultiplier:Economy.MULTIPLIER});toVM(s,data,vm);const event=automatic(s,data,vm,vm.resume(response));if(previous?.type==='quit'&&event.type==='complete')s.ended='quit';return event;
+    const previous=s.story.event,vm=Story.StoryVM.restore(s.story.snapshot,{incomeMultiplier:Economy.MULTIPLIER});s.story.rewardContext=Economy.dialogueContext(s.story);toVM(s,data,vm);const event=automatic(s,data,vm,vm.resume(response));if(previous?.type==='quit'&&event.type==='complete')s.ended='quit';return event;
   }
   function townActions(s,data,partyId){const vm=s.story?.snapshot?Story.StoryVM.restore(s.story.snapshot):new Story.StoryVM();toVM(s,data,vm);return Story.townActions(vm,partyId);}
   function countryAt(s,x,y){
@@ -85,7 +88,7 @@
   }
   function tick(s,data){
     if(s.story?.event&&s.story.event.type!=='complete'&&s.story.event.type!=='tick-complete')return s.story.event;
-    const vm=s.story?.snapshot?Story.StoryVM.restore(s.story.snapshot,{incomeMultiplier:Economy.MULTIPLIER}):new Story.StoryVM({incomeMultiplier:Economy.MULTIPLIER});toVM(s,data,vm);s.story??={history:[],speaker:''};
+    const vm=s.story?.snapshot?Story.StoryVM.restore(s.story.snapshot,{incomeMultiplier:Economy.MULTIPLIER}):new Story.StoryVM({incomeMultiplier:Economy.MULTIPLIER});toVM(s,data,vm);s.story??={history:[],speaker:''};s.story.rewardContext=false;
     return automatic(s,data,vm,vm.startWorldTick());
   }
   function validate(s,data){
