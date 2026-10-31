@@ -1,0 +1,24 @@
+/* Atlas pixels remain untouched; native SVG viewBoxes and alpha clips select poses. */
+svg.character-art{display:block;overflow:hidden;pointer-events:none;image-rendering:auto}
+body svg.character-art,body svg.character-art image{image-rendering:auto!important}
+svg.character-portrait{width:100%;height:auto;aspect-ratio:1;isolation:isolate}
+.story-stage>svg.story-portrait{aspect-ratio:auto}
+.battle-actor .character-body{width:100%;height:100%;overflow:visible;transform-origin:50% 100%}
+.battle-actor.ready .character-body{animation:character-breathe 2.1s ease-in-out infinite}
+.battle-actor.firing .character-body{animation:character-recoil .22s ease-out infinite}
+.battle-actor.hit .character-body{animation:character-brace .25s ease-in-out infinite}
+.battle-actor.leaving .character-body{animation:character-breathe .65s ease-in-out infinite}
+.battle-actor:nth-child(even).ready .character-body{animation-delay:-1s}
+.battle-v3 .native-actor-layer,.battle-v3 .native-effect-layer{position:absolute;inset:0;pointer-events:none}
+.battle-v3 .native-actor-layer .battle-actor{pointer-events:auto}
+.battle-v3 .native-effect-layer{z-index:450}
+.battle-v3 .native-effect-layer .original-battle-layer{z-index:auto}
+.battle-v3 .actor-caption{width:52%;min-width:26px;max-width:52px}
+.character-poses{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}
+.character-pose-card{padding:8px;background:radial-gradient(#405641,#17291f);border:1px solid #a48b5555;border-radius:5px;text-align:center}
+.character-pose-card svg{width:100%;height:140px}.character-pose-card span{display:block;margin-top:4px;font-size:11px;color:#e7cb91}
+@media(max-width:600px){.character-pose-card{padding:5px}.character-pose-card svg{height:100px}}
+@keyframes character-breathe{0%,100%{transform:translateY(0) scaleY(1)}50%{transform:translateY(-1%) scaleY(1.012)}}
+@keyframes character-recoil{0%{transform:translateX(0) rotate(0)}30%{transform:translateX(3%) rotate(1.4deg)}100%{transform:translateX(0) rotate(0)}}
+@keyframes character-brace{0%,100%{transform:translateX(0)}30%{transform:translateX(2%)}65%{transform:translateX(-2%)}}
+@media(prefers-reduced-motion:reduce){.battle-actor .character-body{animation:none!important}}

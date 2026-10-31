@@ -57,7 +57,7 @@
     const before={money:s.money,ledger:s.ledger?.slice()};
     fromVM(s,data,vm.nativeState());s.story??={history:[]};s.story.snapshot=vm.snapshot();s.story.event=event;s.story.eventSerial=(s.story.eventSerial||0)+1;
     const receipt=Economy.incomeReceipt(before,s,s.story.eventSerial);
-    if(receipt){s.story.incomeReceipt=receipt;s.log??=[];s.log.unshift({day:s.day,text:`收益入帳 ＋${receipt.credited.toLocaleString('en-US')} G（收益 ×${receipt.multiplier}；資金 ${receipt.before.toLocaleString('en-US')} → ${receipt.after.toLocaleString('en-US')} G）。`});s.log=s.log.slice(0,80);}
+    if(receipt){s.story.incomeReceipt=receipt;s.log??=[];s.log.unshift({day:s.day,text:Economy.receiptText(receipt)});s.log=s.log.slice(0,80);}
     if(event.type==='complete'&&event.ending?.id==='debtCleared')s.ended='won';
     if(event.type==='complete'&&event.worldFrames)s.story.pendingOpeningEvents=false;
     return event;

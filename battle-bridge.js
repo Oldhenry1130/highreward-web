@@ -39,10 +39,12 @@
     b.allies=wrap(b.core.friendly,b.core.friendlyCount,'friendly');b.enemies=wrap(b.core.enemy,b.core.enemyCount,'enemy');b.turn=b.core.ticks;
     return b;
   }
+  function friendlyNames(actors,q,fallback){return actors.map((a,i)=>q?.members?.find((m,j)=>(m.originalSlot??j)===a.slot&&(m.classId??m.face)===a.classId)?.name||fallback[i]);}
   function create(s,q,encounterBytes,options={}){
     const core=Combat.createBattle({unitBytes:options.unitBytes||encodeUnit(q),encounterBytes,friendlyFormationId:q.formation,
       ...options,random32768:()=>Campaign.random32768(s)});
     const names={},faces={};for(const side of ['friendly','enemy']){names[side]=core[side].map(a=>Combat.originalData.classes[a.classId]?.name.trim()||'');faces[side]=core[side].map(a=>a.classId);}
+    names.friendly=friendlyNames(core.friendly,q,names.friendly);
     return decorate({original:true,squad:q.id,background:options.background??1,core,names,faces,phase:'active',turn:0,time:0,log:['原作戰鬥開始。'],reward:0,settled:false});
   }
   function step(s,q,b){
@@ -69,6 +71,7 @@
   function restore(s,saved){
     validateSnapshot(saved);
     const b=JSON.parse(JSON.stringify(saved));b.core.unitBytes=Uint8Array.from(b.core.unitBytes);b.core.encounterBytes=Uint8Array.from(b.core.encounterBytes);
+    b.names.friendly=friendlyNames(b.core.friendly,s.squads?.[b.squad],b.names.friendly);
     b.core.classes=Combat.originalData.classes;b.core.items=Combat.originalData.items;b.core.random32768=()=>Campaign.random32768(s);return decorate(b);
   }
   function validateSnapshot(b){

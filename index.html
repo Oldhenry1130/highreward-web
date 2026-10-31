@@ -4,18 +4,19 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>高報酬戰將 — HIGH REWARD · Web Remake</title>
-  <link rel="stylesheet" href="style.css?v=0.7.2">
-  <link rel="stylesheet" href="game-ui.css?v=0.7.2">
-  <link rel="stylesheet" href="field-guide.css?v=0.7.2">
-  <link rel="stylesheet" href="battle-art.css?v=0.7.2">
-  <link rel="stylesheet" href="formation-ui.css?v=0.7.2">
-<script>window.HR_RELEASE={"online": true, "artworkComplete": true, "artworkReviewed": 595, "artworkTotal": 595};</script></head>
+  <link rel="stylesheet" href="style.css?v=0.8.0">
+  <link rel="stylesheet" href="game-ui.css?v=0.8.0">
+  <link rel="stylesheet" href="field-guide.css?v=0.8.0">
+  <link rel="stylesheet" href="battle-art.css?v=0.8.0">
+  <link rel="stylesheet" href="formation-ui.css?v=0.8.0">
+  <link rel="stylesheet" href="character-art.css?v=0.8.0">
+<script>window.HR_RELEASE={"online": true, "artworkComplete": true, "artworkReviewed": 595, "artworkTotal": 595, "characterArtworkComplete": true, "characterArtworkReviewed": 84, "characterArtworkTotal": 84};</script></head>
 <body>
   <div class="app">
     <header class="masthead">
       <a class="brand" href="#" aria-label="高報酬戰將首頁"><span class="sigil">HR<span>✦</span></span><div><small>HIGH REWARD</small><h1>高報酬戰將</h1></div></a>
       <nav class="main-nav" aria-label="主選單"><button data-view="command" class="selected" aria-label="作戰指揮" title="作戰指揮"><span data-icon="sword"></span><span>征戰</span></button><button data-view="atlas" aria-label="大陸圖誌" title="大陸圖誌"><span data-icon="map"></span><span>世界</span></button><button data-view="archive" aria-label="人物與典藏" title="人物與典藏"><span data-icon="book"></span><span>圖鑑</span></button></nav>
-      <div class="header-actions"><span class="build">WEB REMAKE <b>0.7.2</b></span><button id="musicBtn" class="icon-only" aria-label="原作音樂" title="原作音樂"><span data-icon="music"></span></button><button id="saveBtn" class="icon-only" aria-label="儲存" title="儲存進度"><span data-icon="save"></span></button><button id="helpBtn" class="icon-only" aria-label="操作說明" title="操作說明"><span data-icon="info"></span></button><button id="menuBtn" class="icon-only" aria-label="設定與說明" title="設定與存檔"><span data-icon="gear"></span></button></div>
+      <div class="header-actions"><span class="build">WEB REMAKE <b>0.8.0</b></span><button id="musicBtn" class="icon-only" aria-label="原作音樂" title="原作音樂"><span data-icon="music"></span></button><button id="saveBtn" class="icon-only" aria-label="儲存" title="儲存進度"><span data-icon="save"></span></button><button id="helpBtn" class="icon-only" aria-label="操作說明" title="操作說明"><span data-icon="info"></span></button><button id="menuBtn" class="icon-only" aria-label="設定與說明" title="設定與存檔"><span data-icon="gear"></span></button></div>
     </header>
     <div class="devnote"><span class="status-dot"></span>原作戰役 · 六隊協同征戰 · 收益 ×5 <button id="resumeEventBtn" data-action="resumeEvent" hidden>繼續目前事件</button><button id="evidenceBtn" title="查看原作還原與驗證範圍">還原進度</button></div>
     <section class="ledger" aria-label="傭兵團財務與時間">
@@ -37,13 +38,13 @@
     <section id="unitDeck" class="unit-deck" aria-label="所屬部隊"><div class="squad-strip-heading"><h2>傭兵部隊 <small>Ⅰ — Ⅵ</small></h2><span>1–6 切換部隊 · SPACE 暫停</span></div><div id="squads" class="squads"></div></section>
     <section class="dispatch-log" hidden><div id="log"></div></section>
     <section id="atlasView" class="other-view" hidden><div class="page-heading"><span class="eyebrow">A WORLD REMEMBERED</span><h2>大陸圖誌</h2><p>循著原作的十一幅國家地圖，重新認識這片大陸。</p></div><div id="atlas" class="atlas-grid"></div></section>
-    <section id="archiveView" class="other-view" hidden><div class="page-heading"><span class="eyebrow">THE ORIGINAL COLLECTION</span><h2>人物與典藏</h2><p>原版頭像、兵種、裝備與文字。每項資料都能回溯到遊戲檔案。</p></div><div class="archive-toolbar"><div id="archiveTabs"><button data-archive="characters" class="selected">人物與兵種</button><button data-archive="items">裝備</button><button data-archive="art">美術素材</button><button data-archive="text">原版文字</button></div><input id="search" type="search" placeholder="搜尋名稱、文字或資源 ID…" aria-label="搜尋典藏"></div><div id="archiveResults"></div></section>
+    <section id="archiveView" class="other-view" hidden><div class="page-heading"><span class="eyebrow">THE ORIGINAL COLLECTION</span><h2>人物與典藏</h2><p>重繪角色、兵種、裝備與原作文字。點選人物可查看準備、射擊與受擊動作。</p></div><div class="archive-toolbar"><div id="archiveTabs"><button data-archive="characters" class="selected">人物與兵種</button><button data-archive="items">裝備</button><button data-archive="art">美術素材</button><button data-archive="text">原版文字</button></div><input id="search" type="search" placeholder="搜尋名稱、文字或資源 ID…" aria-label="搜尋典藏"></div><div id="archiveResults"></div></section>
     <footer class="site-footer"><span>HIGH REWARD <i>／</i> 一場尚未結束的傭兵之旅。</span><div><button id="originalBtn" hidden>原版對照 ↗</button><span>WEB EDITION</span></div></footer>
   </div>
   <dialog id="modal"><button id="closeModal" class="modal-close" aria-label="關閉">×</button><div class="modal-system-actions"><button data-action="export" aria-label="備份目前存檔">備份存檔</button></div><div id="modalContent"></div></dialog>
   <dialog id="guideModal" aria-label="遊戲情報"><button id="closeGuide" class="modal-close" aria-label="關閉情報">×</button><div id="guideContent"></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
   <input id="importFile" type="file" accept="application/json,.json" hidden>
-  <script src="data/game-data.js?v=0.7.2"></script><script src="data/redrawn-assets.js?v=0.7.2"></script><script src="data/original-data.js?v=0.7.2"></script><script src="heraldry.js?v=0.7.2"></script><script src="field-guide.js?v=0.7.2"></script><script src="battle-art.js?v=0.7.2"></script><script src="economy.js?v=0.7.2"></script><script src="original-transport.js?v=0.7.2"></script><script src="original-combat.js?v=0.7.2"></script><script src="original-campaign.js?v=0.7.2"></script><script src="battle-bridge.js?v=0.7.2"></script><script src="original-story.js?v=0.7.2"></script><script src="story-bridge.js?v=0.7.2"></script><script src="original-contracts.js?v=0.7.2"></script><script src="original-ending.js?v=0.7.2"></script><script src="original-music.js?v=0.7.2"></script><script src="armory.js?v=0.7.2"></script><script src="engine.js?v=0.7.2"></script><script src="ui-art.js?v=0.7.2"></script><script src="armory-ui.js?v=0.7.2"></script><script src="formation-ui.js?v=0.7.2"></script><script src="app.js?v=0.7.2"></script>
+  <script src="data/game-data.js?v=0.8.0"></script><script src="data/redrawn-assets.js?v=0.8.0"></script><script src="data/original-data.js?v=0.8.0"></script><script src="character-art-data.js?v=0.8.0"></script><script src="character-art.js?v=0.8.0"></script><script src="heraldry.js?v=0.8.0"></script><script src="field-guide.js?v=0.8.0"></script><script src="battle-art.js?v=0.8.0"></script><script src="economy.js?v=0.8.0"></script><script src="original-transport.js?v=0.8.0"></script><script src="original-combat.js?v=0.8.0"></script><script src="original-campaign.js?v=0.8.0"></script><script src="battle-bridge.js?v=0.8.0"></script><script src="original-story.js?v=0.8.0"></script><script src="story-bridge.js?v=0.8.0"></script><script src="original-contracts.js?v=0.8.0"></script><script src="original-ending.js?v=0.8.0"></script><script src="original-music.js?v=0.8.0"></script><script src="armory.js?v=0.8.0"></script><script src="engine.js?v=0.8.0"></script><script src="ui-art.js?v=0.8.0"></script><script src="armory-ui.js?v=0.8.0"></script><script src="formation-ui.js?v=0.8.0"></script><script src="app.js?v=0.8.0"></script>
 </body>
 </html>
