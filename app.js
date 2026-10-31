@@ -6,12 +6,13 @@
   const icon=window.HRUI.icon;
   const redraw=window.HR_REDRAWN||{assets:[],reviewed:0,total:595,complete:false};
   D.assets.push(...redraw.assets);
-  const KEY='highreward.native.v1',PREF='highreward.preferences.v1';
+  const KEY='highreward.native.v2',LEGACY_KEY='highreward.native.v1',PREF='highreward.preferences.v1';
   let prefs={theme:'hd',welcome:false};try{prefs={...prefs,...JSON.parse(localStorage.getItem(PREF)||'{}')};}catch{}
   if(!prefs.artworkVersion){prefs.theme='redrawn';prefs.artworkVersion=3;try{localStorage.setItem(PREF,JSON.stringify(prefs));}catch{}}
   if(window.HR_RELEASE?.online||!['hd','hd-ai','redrawn'].includes(prefs.theme))prefs.theme='redrawn';
   document.body.dataset.artwork=prefs.theme;
-  let state;try{state=E.validateSave(JSON.parse(localStorage.getItem(KEY)||'null'),D);}catch{state=E.newGame(D);}
+  let state;try{const saved=localStorage.getItem(KEY)??localStorage.getItem(LEGACY_KEY);state=E.validateSave(JSON.parse(saved||'null'),D);}catch{state=E.newGame(D);}
+  try{if(!localStorage.getItem(KEY))localStorage.setItem(KEY,JSON.stringify(state));}catch{}
   let ui={view:'command',tab:'city',selected:0,base:state.squads[0].at,speed:0,archive:'characters',limit:48,query:'',routes:false,zoom:1,panX:0,panY:0,hover:null,facility:'roster',recruit:6,item:0,member:0};
   let battle=null,battleElapsed=0,autoBattle=true,modalKind='',toastTimer,saveUnavailable=false;
   const imageCache=new Map(),assetMap=new Map();
