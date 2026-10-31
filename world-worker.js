@@ -1,7 +1,7 @@
 /* The same original campaign engine, isolated from rendering and input. */
 'use strict';
 self.window=self;
-importScripts(...['data/game-data.js','data/original-data.js','original-transport.js','original-combat.js','original-campaign.js','battle-bridge.js','original-story.js','story-bridge.js','armory.js','engine.js'].map(p=>p+'?v=0.6.0'));
+importScripts(...['data/game-data.js','data/original-data.js','original-transport.js','original-combat.js','original-campaign.js','battle-bridge.js','original-story.js','story-bridge.js','armory.js','engine.js'].map(p=>p+'?v=0.6.2'));
 self.onmessage=function(event){
   const {state,generation,ticks}=event.data;
   try{
