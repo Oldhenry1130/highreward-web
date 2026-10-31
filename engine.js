@@ -3,6 +3,7 @@
 (function (scope) {
   'use strict';
   const VERSION = 4;
+  const Heraldry=typeof module!=='undefined'&&module.exports?require('./heraldry.js'):scope.HRHeraldry;
   const Economy=typeof module!=='undefined'&&module.exports?require('./economy.js'):scope.HREconomy;
   const Armory=typeof module!=='undefined'&&module.exports?require('./armory.js'):scope.HRArmory;
   const Transport=typeof module!=='undefined'&&module.exports?require('./original-transport.js'):scope.OriginalTransport;
@@ -22,6 +23,7 @@
       stamina:100,formation:0,equipment:null,kills:0}));
     if(data.original){s.mode='native-original';StoryBridge.initial(s,data,seed);record(s,'原作戰役開始，六支部隊駐留薩蘭特城。');}
     else record(s,'原生重製測試戰役開始。經濟、行軍、戰鬥與任務規則尚待原版對拍。');
+    s.squads.forEach(q=>Heraldry.normalize(q));
     return s;
   }
   const pathCaches=new WeakMap();
@@ -381,7 +383,7 @@
     if(value.cheatsUsed!==undefined&&(!Number.isSafeInteger(value.cheatsUsed)||value.cheatsUsed<0))throw Error('密技紀錄無效');
     if(value.mode==='native-original'){StoryBridge.validate(value,data);Economy.configure(value);}
     value.squads.forEach((q,i)=>{
-      Armory.validate(q,data);
+      Armory.validate(q,data);Heraldry.normalize(q);
       if(q.id!==i||!Number.isInteger(q.at)||!data.bases[q.at]||!Array.isArray(q.members)||!q.members.length||q.members.length>12)throw Error('部隊資料無效');
       if(!['idle','move','rest'].includes(q.order)||!Array.isArray(q.route)||q.route.some(v=>!Number.isInteger(v)||!data.bases[v]))throw Error('行軍資料無效');
       if(legacy){q.position=null;q.travel=null;q.route=[];q.progress=0;if(q.order==='move')q.order='idle';}
