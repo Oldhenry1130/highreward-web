@@ -1,6 +1,7 @@
 /* Graphical command interface, v0.2. Existing rules and save files stay compatible. */
 :root{--bg:#10191b;--panel:#1c292b;--panel2:#293a3b;--line:#536057;--gold:#dfbd78;--text:#ece5ce;--muted:#a5b3a7;--red:#de9684}
 body[data-artwork=redrawn] img{image-rendering:auto!important}
+.item-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:10px 0 5px}.item-stats>span{display:flex;align-items:center;flex-wrap:wrap;gap:4px;border:1px solid #8f8056;background:#172b24;padding:8px;font-size:11px}.item-stats strong{font:22px Georgia,serif;color:#f1d690;margin-left:auto}.item-stats .game-icon{width:18px;height:18px}.stat-source{display:block;font-size:10px;color:#c4be9b;margin:7px 0}.equipment-recipient{display:flex;align-items:center;gap:10px;font-size:11px;margin:9px 0}.equipment-recipient select{min-width:0;flex:1;background:#203a2e;color:#ede4c8;padding:7px;border:1px solid #8f8056}.equipped-summary{display:grid;gap:5px;font-size:11px;padding:9px 0;color:#d6c89d}.roster-gear{display:flex;gap:3px;align-items:center;justify-content:center;font:10px Consolas,monospace;color:#eddaa7}.roster-gear .game-icon{width:12px;height:12px}
 .sprite-viewport{display:inline-block;position:relative;height:60px;width:auto;aspect-ratio:var(--sprite-ratio);overflow:visible;vertical-align:bottom}
 .battle-unit .sprite-viewport img{position:absolute;inset:0;height:100%!important;width:100%;max-width:none;object-fit:fill;transform-origin:0 0;transform:var(--asset-transform)!important}
 .battle-team.allies .sprite-viewport{transform:scaleX(-1)}
