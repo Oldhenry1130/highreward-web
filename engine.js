@@ -2,7 +2,8 @@
  * historical playtest saves have a separate, explicitly labelled compatibility path. */
 (function (scope) {
   'use strict';
-  const VERSION = 3;
+  const VERSION = 4;
+  const Armory=typeof module!=='undefined'&&module.exports?require('./armory.js'):scope.HRArmory;
   const Transport=typeof module!=='undefined'&&module.exports?require('./original-transport.js'):scope.OriginalTransport;
   const Combat=typeof module!=='undefined'&&module.exports?require('./original-combat.js'):scope.OriginalCombat;
   const BattleBridge=typeof module!=='undefined'&&module.exports?require('./battle-bridge.js'):scope.OriginalBattleBridge;
@@ -111,6 +112,18 @@
     const weapon=data.items.find(x=>x.index===member.weapon&&x.equipmentSlot==='weapon'),armor=data.items.find(x=>x.index===member.armor&&x.equipmentSlot==='armor');
     return {power:weapon?.recoveredStats?.power||0,protection:armor?.recoveredStats?.protection||0};
   }
+  function manageStock(s,data,action){
+    const q=s.squads[action.squad];if(!q)throw Error('部隊不存在');let result;
+    switch(action.type){
+      case 'purchaseStock':result=Armory.purchase(s,data,q.id,action.offer,action.quantity??1);record(s,`${q.name}購入${data.items[result.itemId].name} × ${result.quantity}，已收入部隊倉庫，支出 ${result.cost} G。`);break;
+      case 'equipStock':result=Armory.equip(s,data,action.fromSquad??q.id,q.id,action.slot,action.item);break;
+      case 'unequipStock':result=Armory.unequip(s,data,q.id,action.slot,action.key);break;
+      case 'moveStock':result=Armory.moveStock(s,data,q.id,action.target,action.item);break;
+      case 'sellStock':result=Armory.sell(s,data,q.id,action.item,action.quantity??1);record(s,`${q.name}出售倉庫物品，收入 ${result.income} G。`);break;
+      default:throw Error('不支援的倉庫操作');
+    }return result;
+  }
+  function cheatMoney(s){const amount=Armory.cheat(s);record(s,`密技補給：增加 ${amount.toLocaleString()} G。`);return amount;}
   function offers(data, baseId) {
     const b=data.bases[baseId];if(!b)return [];
     const targets=data.bases.filter(x=>x.index!==baseId&&x.countryIndexCandidate===b.countryIndexCandidate)
@@ -356,7 +369,7 @@
     else record(s,`${q.name}撤退，請整備後再出擊。`);
   }
   function validateSave(value,data){
-    if(!value||![1,2,VERSION].includes(value.version)||!['native-playtest','native-original'].includes(value.mode)||!Array.isArray(value.squads)||value.squads.length!==6)throw Error('不是相容的 Web 存檔');
+    if(!value||![1,2,3,VERSION].includes(value.version)||!['native-playtest','native-original'].includes(value.mode)||!Array.isArray(value.squads)||value.squads.length!==6)throw Error('不是相容的 Web 存檔');
     value=clone(value);const legacy=value.version===1;value.version=VERSION;
     for(const k of ['money','debt','day','hour','rep','seed'])if(!Number.isSafeInteger(value[k])||value[k]<0||value[k]>1e12)throw Error('存檔數值無效');
     if(value.hour>25||!Array.isArray(value.log)||!Array.isArray(value.taken)||!Array.isArray(value.completed)||!Array.isArray(value.inventory))throw Error('存檔結構無效');
@@ -364,8 +377,10 @@
     if(value.clock&&(!Number.isInteger(value.clock.subtick)||value.clock.subtick<0||value.clock.subtick>250||!Number.isInteger(value.clock.hour)||value.clock.hour<0||value.clock.hour>25))throw Error('原作時鐘無效');
     if(value.ledger&&(!Array.isArray(value.ledger)||value.ledger.length!==96||value.ledger.some(n=>!Number.isSafeInteger(n)||n<0||n>0xffffffff)))throw Error('原作帳目無效');
     if(value.activeBattle)BattleBridge.validateSnapshot(value.activeBattle);
+    if(value.cheatsUsed!==undefined&&(!Number.isSafeInteger(value.cheatsUsed)||value.cheatsUsed<0))throw Error('密技紀錄無效');
     if(value.mode==='native-original')StoryBridge.validate(value,data);
     value.squads.forEach((q,i)=>{
+      Armory.validate(q,data);
       if(q.id!==i||!Number.isInteger(q.at)||!data.bases[q.at]||!Array.isArray(q.members)||!q.members.length||q.members.length>12)throw Error('部隊資料無效');
       if(!['idle','move','rest'].includes(q.order)||!Array.isArray(q.route)||q.route.some(v=>!Number.isInteger(v)||!data.bases[v]))throw Error('行軍資料無效');
       if(legacy){q.position=null;q.travel=null;q.route=[];q.progress=0;if(q.order==='move')q.order='idle';}
@@ -393,6 +408,7 @@
       q.members.forEach((m,j)=>{for(const k of ['hp','maxHp','attack','defense'])if(!Number.isFinite(m[k])||m[k]<0||m[k]>1000000)throw Error('成員能力無效');if(typeof m.name!=='string'||m.name.length>100||m.hp>m.maxHp)throw Error('成員資料無效');
         if(legacy){m.weapon=null;m.armor=null;const old=data.items.find(x=>x.index===q.equipment);if(j===0&&old?.equipmentSlot)m[old.equipmentSlot]=old.index;}
         for(const slot of ['weapon','armor'])if(m[slot]!==null&&!data.items.some(x=>x.index===m[slot]&&x.equipmentSlot===slot))throw Error('裝備資料無效');
+        if(value.mode==='native-original'&&(m.consumable!==null&&(!Number.isInteger(m.consumable)||m.consumable<40||m.consumable>61)||!Number.isInteger(m.consumableCount)||m.consumableCount<0||m.consumableCount>255))throw Error('持物資料無效');
       });
       if(value.mode==='native-original'){const slots=q.members.map(m=>m.originalSlot);if(slots.some(n=>!Number.isInteger(n)||n<0||n>10)||new Set(slots).size!==slots.length)throw Error('原作成員槽位無效');}
     });
@@ -406,6 +422,6 @@
   function battleCommand(s,b,input){const result=BattleBridge.command(b,input);s.activeBattle=BattleBridge.snapshot(b);return result;}
   function townActions(s,data,partyId){return StoryBridge.townActions(s,data,partyId);}
   function countryAt(s,x,y){return StoryBridge.countryAt(s,x,y);}
-  const api={VERSION,newGame,route,routePlan,movementGrid,position,atBase,transportUnit,movementOptions,commandAvailability,vehiclesAt,equipmentStats,offers,step,command,beginBattle,beginOriginalBattle,restoreOriginalBattle,battleStep,finishBattle,battleCommand,storyEvent,storyResume,townActions,countryAt,validateSave,clone};
+  const api={VERSION,newGame,route,routePlan,movementGrid,position,atBase,transportUnit,movementOptions,commandAvailability,vehiclesAt,equipmentStats,offers,step,command,manageStock,cheatMoney,beginBattle,beginOriginalBattle,restoreOriginalBattle,battleStep,finishBattle,battleCommand,storyEvent,storyResume,townActions,countryAt,validateSave,clone};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else scope.HREngine=api;
 })(typeof window==='undefined'?globalThis:window);
