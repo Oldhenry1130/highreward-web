@@ -13,7 +13,8 @@
   document.body.dataset.artwork=prefs.theme;
   let state;try{const saved=localStorage.getItem(KEY);state=E.validateSave(JSON.parse(saved||'null'),D);}catch{state=E.newGame(D);}
   try{if(!localStorage.getItem(KEY))localStorage.setItem(KEY,JSON.stringify(state));}catch{}
-  const initialSquad=state.activeBattle?.squad??state.selectedSquad??0;
+  const preferredSquad=state.story?.event?.type==='battle'?state.activeBattle?.squad:state.selectedSquad;
+  const initialSquad=Number.isInteger(preferredSquad)&&preferredSquad>=0&&preferredSquad<6?preferredSquad:0;
   let ui={view:'command',tab:'city',selected:initialSquad,base:state.squads[initialSquad].at,speed:0,archive:'characters',limit:48,query:'',routes:false,zoom:1,panX:0,panY:0,hover:null,facility:'roster',recruit:6,item:0,member:0};
   let battle=E.restoreOriginalBattle(state),battleElapsed=0,autoBattle=true,modalKind='',toastTimer,saveUnavailable=false;
   let worldWorker=null,worldPending=false,worldGeneration=0;
@@ -22,7 +23,7 @@
     if(worldPending)return;
     if(!worldWorker){
       worldWorker=new Worker('world-worker.js?v=0.5.0');
-      worldWorker.onmessage=({data})=>{worldPending=false;if(data.generation!==worldGeneration)return;if(data.error){ui.speed=0;toast('世界運算已暫停：'+data.error);render();return;}const previousBase=state.squads[ui.selected].at;state=data.state;if(!ui.point&&ui.base===previousBase&&state.squads[ui.selected].at!==previousBase)ui.base=state.squads[ui.selected].at;render();if(state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type)){save(true);renderStory();}};
+      worldWorker.onmessage=({data})=>{worldPending=false;if(data.generation!==worldGeneration)return;if(data.error){ui.speed=0;toast('世界運算已暫停：'+data.error);render();return;}const previousBase=state.squads[ui.selected].at;state=data.state;if(!ui.point&&ui.base===previousBase&&state.squads[ui.selected].at!==previousBase){ui.base=state.squads[ui.selected].at;state.viewCountry=D.bases[ui.base].countryIndexCandidate;}render();if(state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type)){save(true);renderStory();}};
       worldWorker.onerror=()=>{worldPending=false;ui.speed=0;worldWorker.terminate();worldWorker=null;toast('背景運算載入失敗，請重新整理後繼續。');render();};
     }
     worldPending=true;worldWorker.postMessage({state,generation:worldGeneration,ticks});
@@ -62,7 +63,7 @@
     return sourceTownActions().map((a,index)=>({...a,index})).filter(filter).map(a=>`<button class="facility-tile" data-original-town="${a.index}" aria-label="${esc(a.label.trim())}" title="${esc(a.label.trim())}"><span class="facility-art">${icon(storyIcon(a.label))}</span><span>${esc(a.label.trim())}</span></button>`).join('');
   }
   function beginStory(request){try{E.storyEvent(state,D,request);save(true);render();renderStory();}catch(e){toast(e.message);}}
-  function continueStory(response={}){try{const event=E.storyResume(state,D,response);if(event.type==='complete'&&event.ending?.id==='debtCleared'){state.ending={index:0,campaignBytes:event.ending.campaignBytes||state.originalCampaign,finished:false};save(true);render();showEnding();return;}if(state.story?.event?.type==='complete'&&squad().order==='move')ui.speed=1;save(true);render();renderStory();}catch(e){toast(e.message);}}
+  function continueStory(response={}){try{const previousBase=squad().at,event=E.storyResume(state,D,response);if(!ui.point&&ui.base===previousBase&&squad().at!==previousBase){ui.base=squad().at;state.viewCountry=D.bases[ui.base].countryIndexCandidate;}if(event.type==='complete'&&event.ending?.id==='debtCleared'){state.ending={index:0,campaignBytes:event.ending.campaignBytes||state.originalCampaign,finished:false};save(true);render();showEnding();return;}if(state.story?.event?.type==='complete'&&squad().order==='move')ui.speed=1;save(true);render();renderStory();}catch(e){toast(e.message);}}
   function showEnding(){
     if(!state.ending||!window.OriginalEnding)return;
     const sequence=window.OriginalEnding.buildEndingSequence(state.ending.campaignBytes),index=Math.max(0,Math.min(sequence.stages.length-1,state.ending.index)),stage=sequence.stages[index],credits=stage.id==='credits'||stage.preserveCreditSurface;
