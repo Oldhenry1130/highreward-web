@@ -11,12 +11,12 @@
   if(!prefs.artworkVersion){prefs.theme='redrawn';prefs.artworkVersion=3;try{localStorage.setItem(PREF,JSON.stringify(prefs));}catch{}}
   if(window.HR_RELEASE?.online||!['hd','hd-ai','redrawn'].includes(prefs.theme))prefs.theme='redrawn';
   document.body.dataset.artwork=prefs.theme;
-  let state;try{const saved=localStorage.getItem(KEY)||localStorage.getItem('highreward.native.v3');state=E.validateSave(JSON.parse(saved||'null'),D);}catch{state=E.newGame(D);}
-  try{if(!localStorage.getItem(KEY))localStorage.setItem(KEY,JSON.stringify(state));}catch{}
+  let state,loadError=null,initialRaw=null;try{initialRaw=localStorage.getItem(KEY)||localStorage.getItem('highreward.native.v3');if(initialRaw){try{if(!localStorage.getItem(KEY+'.before-0.6.1'))localStorage.setItem(KEY+'.before-0.6.1',initialRaw);}catch{}}state=E.validateSave(JSON.parse(initialRaw||'null'),D);}catch(error){loadError=initialRaw?error.message:null;state=E.newGame(D);}
+  try{if(!loadError&&!localStorage.getItem(KEY))localStorage.setItem(KEY,JSON.stringify(state));}catch{}
   const preferredSquad=state.story?.event?.type==='battle'?state.activeBattle?.squad:state.selectedSquad;
   const initialSquad=Number.isInteger(preferredSquad)&&preferredSquad>=0&&preferredSquad<6?preferredSquad:0;
   let ui={view:'command',tab:'city',selected:initialSquad,base:state.squads[initialSquad].at,speed:0,archive:'characters',limit:48,query:'',routes:false,zoom:1,panX:0,panY:0,hover:null,focusTarget:-1,focusUntil:0,facility:'roster',recruit:6,item:0,member:0};
-  let battle=E.restoreOriginalBattle(state),battleElapsed=0,autoBattle=true,modalKind='',toastTimer,saveUnavailable=false;
+  let battle=null,battleElapsed=0,autoBattle=true,battleInteracting=false,modalKind='',toastTimer,saveUnavailable=false;try{battle=E.restoreOriginalBattle(state);}catch(error){loadError=error.message;}
   let worldWorker=null,worldPending=false,worldGeneration=0;
   function invalidateWorld(){worldGeneration++;}
   function requestWorld(ticks){
@@ -42,7 +42,7 @@
   }
   function getImage(id){const src=url(id);if(!src)return null;if(!imageCache.has(src)){const im=new Image();im.src=src;imageCache.set(src,im);}return imageCache.get(src);}
   function toast(text){$('#toast').textContent=text;$('#toast').classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3500);}
-  function save(silent=false){try{localStorage.setItem(KEY,JSON.stringify(state));if(!silent)toast('已儲存在此瀏覽器。');}catch{saveUnavailable=true;if(!silent)toast('瀏覽器無法儲存，請使用匯出存檔。');}}
+  function save(silent=false){if(loadError){if(!silent)toast('原始存檔已保留，請先匯出或匯入有效備份');return;}try{localStorage.setItem(KEY,JSON.stringify(state));if(!silent)toast('已儲存在此瀏覽器。');}catch{saveUnavailable=true;if(!silent)toast('瀏覽器無法儲存，請使用匯出存檔。');}}
   function savePrefs(){try{localStorage.setItem(PREF,JSON.stringify(prefs));}catch{}}
   function legacyBackup(){try{for(const key of LEGACY_KEYS){const raw=localStorage.getItem(key);if(raw)return raw;}}catch{}return null;}
   function exportLegacy(){const raw=legacyBackup();if(!raw){toast('沒有舊版試作存檔');return;}const blob=new Blob([raw],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='highreward-v0.4-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
@@ -96,7 +96,7 @@
     if(e.cancelValues?.includes(-1)&&!choices.some(o=>o.id===-1))controls+='<button class="story-choice" data-story-value="-1">'+icon('back')+'<span>返回</span></button>';
     if(['text','ending','quit'].includes(e.type))controls=graphicButton('storyNext','arrow',e.type==='quit'?'結束流程':'繼續','','primary');
     else if(e.type==='selection')controls+=`<button class="story-choice" data-story-value="65535">${icon('back')}<span>取消選擇</span></button>`;
-    else if(e.type==='unresolved')controls='<p class="source">此原作流程尚有未接入的呼叫，已保留目前進度。</p>';
+    else if(['unresolved','fault'].includes(e.type))controls=`<p class="event-warning">事件已暫停，進度仍保留。請先備份存檔，以便修復接續。</p><p class="source">${esc(e.type+' · '+e.name+' · '+(e.message||''))}${e.source?' · '+esc(JSON.stringify(e.source)):''}</p><button data-action="export">備份目前存檔</button>`;
     openModal(`<span class="eyebrow">HIGH REWARD · ORIGINAL STORY</span><div class="story-stage">${img('MAP'+String((D.bases[squad().at].countryIndexCandidate??0)+1).padStart(2,'0')+'.PXZ','story-background','所在地景象')}${faceImage}<div class="story-speaker">${esc(e.title||speaker)}</div></div><div class="story-text">${esc(e.lines?.join('\n')||e.text||(['menu.choose','menu.window','vehicle.shop'].includes(e.name)?'請選擇行動。':history[history.length-1]?.text)||'請選擇行動。')}</div><div class="story-choices">${controls}</div>`,'story');
   }
   function nativeDesk(){
@@ -117,7 +117,9 @@
   }
   async function playMusic(){try{await window.OriginalMusic.toggle(true);await window.OriginalMusic.play(ui.musicTrack);prefs.music=true;savePrefs();showMusic();$('#musicStatus').textContent='播放中：'+ui.musicTrack;}catch(e){toast('音樂無法播放：'+e.message);}}
   async function toggleMusic(){try{await window.OriginalMusic.toggle();prefs.music=window.OriginalMusic.getState().enabled;savePrefs();showMusic();}catch(e){toast(e.message);}}
+  function showLoadRecovery(){openModal(`<h2>存檔暫時無法載入</h2><p>原始存檔已保留，不會以新戰役覆寫。請先匯出原始存檔，或匯入有效備份。</p><p class="source">${esc(loadError)}</p><div class="modal-actions"><button data-action="export">匯出原始存檔</button><button data-action="import">匯入備份</button><button data-action="reload">重試載入</button></div>`,'load-recovery');}
   function resumeScene(){
+    if(loadError){showLoadRecovery();return;}
     if(state.ending&&!state.ending.finished){showEnding();return;}
     if(state.mode==='native-original'&&state.story?.pendingOpeningEvents&&(!state.story.event||state.story.event.type==='complete')){E.step(state,D,1);save(true);}
     if(state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type))renderStory();
@@ -156,6 +158,7 @@
     return `<div class="location-panorama">${img(background,'','原作地圖')}<div class="location-caption"><small>${esc(c?.name||'大陸野外')}</small><h3>地圖座標 ${p.x}，${p.y}</h3></div></div>${transportControls(q,p)}${worldOrders(q,null,p)}<div class="travel-status">${icon('map')}<span>${esc(place(q))}</span></div>${nativeTasks(q)}<button class="rules-link" data-action="currentLocation">查看目前據點</button>`;
   }
   function render(){
+    $('#resumeEventBtn').hidden=!state.story?.event||['complete','tick-complete'].includes(state.story.event.type);
     $('#money').textContent=money(state.money);$('#debt').textContent=money(state.debt);$('#date').textContent=state.calendar?`${state.calendar.year} 年 ${state.calendar.month} 月 ${state.calendar.day} 日 · ${String(state.hour).padStart(2,'0')}時`:`${String(state.day).padStart(3,'0')}日 · ${String(state.hour).padStart(2,'0')}:00`;
     $$('#speeds button').forEach(b=>{b.classList.toggle('selected',+b.dataset.speed===ui.speed);b.setAttribute('aria-pressed',String(+b.dataset.speed===ui.speed));});
     $('#squads').innerHTML=state.squads.map((q,i)=>{
@@ -230,7 +233,22 @@
   const modal=$('#modal');
   const armoryUI=window.HRArmoryUI.create({data:D,engine:E,esc,icon,img,portrait,itemStats,state:()=>state,selected:()=>ui.selected,open:openModal,toast,save:()=>save(true),renderMain:render,invalidate:invalidateWorld,resumeStory:continueStory});
   function openModal(html,kind='info'){ui.speed=0;modalKind=kind;modal.dataset.kind=kind;$('#modalContent').innerHTML=html;if(!modal.open)modal.showModal();render();}
-  function closeModal(){if(battle?.phase==='active'){toast('請先撤退或完成戰鬥。');return;}if(modalKind==='story'&&state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type)){toast('請使用對話中的選項或返回按鈕完成目前流程。');return;}modal.close();modalKind='';battle=null;armoryUI.clear();}
+  function exitBattle(){
+    const finished=battle;if(!finished||finished.phase==='active')return;
+    battle=null;ui.battleError='';ui.battleInspect=null;ui.battleClosePrompt=false;ui.battleReturnAfterRetreat=false;modal.close();modalKind='';armoryUI.clear();
+    if(finished.original&&state.story?.event?.type==='battle')continueStory({value:finished.core.outcome,unitBytes:Array.from(finished.core.unitBytes),encounterBytes:Array.from(finished.core.encounterBytes),randomSeed:state.seed});else render();
+  }
+  function requestRetreat(returnAfter=false){try{E.finishBattle(state,battle,false);ui.battleClosePrompt=false;ui.battleReturnAfterRetreat=returnAfter;ui.battleError='';autoBattle=true;save(true);renderBattle();}catch(error){ui.battleError=error.message;autoBattle=false;renderBattle();}}
+  function closeModal(){
+    if(loadError){showLoadRecovery();return;}
+    if(battle?.phase==='active'){if(!ui.battleClosePrompt)ui.battleResumeAfterClose=autoBattle;ui.battleClosePrompt=true;autoBattle=false;renderBattle();return;}
+    if(modalKind==='battle'&&battle){exitBattle();return;}
+    if(modalKind==='story'&&state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type)){
+      if(['text','ending','quit'].includes(state.story.event.type)){continueStory();return;}
+      if(!['fault','unresolved'].includes(state.story.event.type)){const warning=document.createElement('p');warning.className='event-warning';warning.textContent='請選擇下方的行動或返回按鈕，以完成目前事件。';document.querySelector('.event-warning')?.remove();$('#modalContent').append(warning);return;}
+    }
+    modal.close();modalKind='';battle=null;armoryUI.clear();
+  }
   function showWelcome(){openModal(`<div class="game-splash">${img('GMAP.PXS','splash-map','原作大陸全圖')}<div class="splash-copy"><span class="eyebrow">HIGH REWARD · WEB 0.6</span><h2>傭兵團，再次出發。</h2><div class="splash-portraits">${[0,1,2,3,4,5].map(i=>`<img src="${esc(portrait(i))}" alt="傭兵團隊長">`).join('')}</div><p>六支部隊、十一個國家。從薩蘭特城出發，履行委託、整備部隊，償清家族債務。</p><div class="modal-actions">${graphicButton('welcomeStart','sword','開始征戰','','primary')}${graphicButton('welcomeAtlas','map','探索世界')}</div><small>原作規則與劇情 · 現代瀏覽器介面</small></div></div>`,'welcome');}
   function showEvidence(){openModal(`<span class="eyebrow">RESTORATION NOTES · 0.5</span><h2>原作還原與驗證</h2><p>0.6 新增圖像拖曳編制、部隊倉庫採購／配裝、放大城鎮標記與 Shift＋G 密技。倉庫與密技是本重製版的擴充操作；0.5 原作戰役進度會自動接續。</p><p>原作主程式與 138 個程式區塊轉為受限的 JavaScript 執行模型，保留世界時鐘、六隊狀態、事件旗標、劇情與交易流程。戰鬥以獨立的原作規則移植呈現。</p><h3>戰鬥與世界</h3><p>原作能力成長、命中、傷害、射速、16 種陣形、個別與全隊撤退、勝敗結算；世界攻城、守軍、載具故障、交通資格、128×96 地形及自由座標行軍。</p><h3>劇情與設施</h3><p>民事、軍事、公演、建築、銀行與主線事件由原作程式控制；裝備、招募及載具交易使用原作商店流程，償債後接入六隊結局、總帳與製作名單。</p><h3>對照證據</h3><p>603 個世界循環逐一比對全部 31,848 個戰役位元組、亂數與遭遇資料；99 處據點的 337 個入口、2,398 個分支節點通過操作檢查。戰鬥、交通、交易與任務另有原程式差異測試。</p><h3>瀏覽器呈現</h3><p>${redraw.reviewed}/${redraw.total} 項素材完成重繪。對話、行軍、戰鬥及片尾採新版畫面與操作節奏；27 首原作 MIDI 使用瀏覽器合成音色。Web JSON 與 DOS 存檔格式分開。測試覆蓋列出的案例，並不代表所有可能的長期遊玩組合都已窮舉。</p><div class="modal-actions"><button data-action="help">操作說明</button></div>`,'evidence');}
   function showHelp(){openModal(`<span class="eyebrow">FIELD MANUAL</span><h2>指揮官手冊</h2><div class="help-grid"><div>${icon('people')}<h3>六支部隊</h3><p>點選下方部隊或按 1–6 切換。整備頁可查看每名成員能力、裝備、陣形與同城移交。</p></div><div>${icon('forge')}<h3>原作商店</h3><p>在駐留城鎮選擇商店或酒店。裝備先購買到部隊倉庫，再拖到成員身上；舊裝備自動回倉庫。也可先點物品，再點成員。載具商店提供原作換購、出售與劇情限制。</p></div><div>${icon('scroll')}<h3>委託與主線</h3><p>民事與軍事看板保留原作條件及對話。接任後的目的地、期限與進度會顯示在部隊與委託頁；點目的地可定位並閃爍該城鎮 10 秒。</p></div><div>${icon('move')}<h3>自由行軍</h3><p>點選據點或地圖空白處，選步行、車輛或飛機後出發。偵察、占領、攻擊設定與退卻依原作資格開放。空白鍵暫停。</p></div><div>${icon('sword')}<h3>遭遇戰</h3><p>可暫停、逐步推進、查看能力、個別撤退或全隊撤退。戰鬥結束後返回原作事件，勝敗與傷亡持續保存。</p></div><div>${icon('chest')}<h3>存檔與還款</h3><p>金庫可拜訪銀行。進度自動保存在此瀏覽器；設定中可匯出、匯入 JSON。舊版試作存檔保留為獨立備份。</p></div></div><p class="small muted">時間暫停時可安心下達命令；城鎮休養需要推進時間。原作每月 28 日。音樂需先點上方音符啟用。Shift＋G 每次增加 50,000 G；長按不會連續觸發。</p>`,'help');}
@@ -250,16 +268,22 @@
       if(m.classId===-1)return '';const nativeSide=side==='allies'?'friendly':'enemy',layers=window.OriginalCombat.battleSpriteLayers(m,nativeSide,b.core.effects,window.OriginalCombat.originalData.classes);
       return layers.map(l=>`<span class="original-battle-layer" style="left:${l.x/640*100}%;top:${l.y/400*100}%">${sprite(l.archive.toUpperCase()+':'+l.index,m.name)}</span>`).join('')+`<button class="original-battle-person" style="left:${(m.x+32)/640*100}%;top:${(m.y+32)/400*100}%" data-battle-inspect="${i}" data-battle-side="${nativeSide}" aria-label="查看${esc(m.name)}能力"><span class="mini-bar"><i style="width:${Math.max(0,m.hp)/Math.max(1,m.maxHp)*100}%"></i></span><small>${m.hp}/${m.maxHp}</small></button>`;
     }).join(''):`<div class="battle-team ${side}">${members.map((m,i)=>`<div class="battle-unit ${m.hp?'':'dead'}">${sprite('BC32.MRG:'+(side==='allies'?i%4*3:9),m.name)}<div class="mini-bar"><i style="width:${m.hp/Math.max(1,m.maxHp)*100}%"></i></div><small>${m.hp}/${m.maxHp}</small></div>`).join('')}</div>`;
-    const controls=b.phase==='active'
+    let controls=b.phase==='active'
       ? graphicButton('battlePause',autoBattle?'pause':'play',autoBattle?'暫停戰鬥':'繼續戰鬥')+graphicButton('battleStep','arrow','單步推進')+graphicButton('retreat','back','撤退')
       : graphicButton('battleClose','castle','返回本部','','primary');
-    $('#modalContent').innerHTML=`<span class="eyebrow">HIGH REWARD · BATTLE</span><h2>${esc(state.squads[b.squad].name)}</h2>
-      <div class="battle-scene ${b.original?'original-scene':''} ${b.phase==='active'?'is-active':''}">${img('BSTAGE.MRG:'+(b.background??state.story?.event?.background??1),'battle-ground','原作戰鬥舞台')}<span class="battle-title">${esc(b.phase==='active'?'ENGAGED':b.phase==='won'?'VICTORY':'WITHDRAWAL')}</span><span class="battle-turn">TURN ${String(b.turn).padStart(2,'0')}</span>${team(b.allies,'allies')}${team(b.enemies,'enemies')}</div>
-      ${b.phase==='active'?'':`<div class="battle-result">${b.phase==='won'?'VICTORY':'RETREAT'}</div><p style="text-align:center">${b.phase==='won'?`${icon('coin')} ${money(b.reward)} G`:'部隊已撤回'}</p>`}
-      ${b.original&&ui.battleInspect?battleInspection(b):''}<details class="battle-details"><summary>戰鬥紀錄</summary><div class="battle-log">${b.log.slice(0,8).map(l=>`<div>${esc(l)}</div>`).join('')}</div></details>
-      <div class="modal-actions">${controls}</div><p class="battle-rule">${b.original?'原作命中、射速、傷害、陣形與退場規則':'戰鬥試作 · 暫定規則'}</p>`;
+    if(b.original&&ui.battleInspect){const selected=ui.battleInspect,actor=b.core[selected.side]?.[selected.index];if(selected.side==='friendly'&&b.phase==='active'&&actor?.hp>0&&actor.state<28)controls+=graphicButton('withdrawMember','back','個別撤退');}
+    if(ui.battleClosePrompt&&b.phase==='active')controls=`<div class="battle-close-prompt"><strong>戰鬥尚未結束，要下令撤退並返回事件嗎？</strong><small>撤退依原作規則結算，不會直接略過戰鬥。</small><div>${graphicButton('confirmBattleRetreat','back','撤退並返回','','primary')}${graphicButton('cancelBattleClose','sword','留在戰鬥')}</div></div>`;
+    if(!$('#battleDisplay'))$('#modalContent').innerHTML='<div id="battleDisplay"></div><div id="battleInspector"></div><details class="battle-details"><summary>戰鬥紀錄</summary><div id="battleLog" class="battle-log"></div></details><div id="battleControls" class="modal-actions"></div><p id="battleRule" class="battle-rule"></p>';
+    $('#battleDisplay').innerHTML=`<span class="eyebrow">HIGH REWARD · BATTLE</span><h2>${esc(state.squads[b.squad].name)}</h2><div class="battle-scene ${b.original?'original-scene':''} ${b.phase==='active'?'is-active':''}">${img('BSTAGE.MRG:'+(b.background??state.story?.event?.background??1),'battle-ground','原作戰鬥舞台')}<span class="battle-title">${esc(b.phase==='active'?'ENGAGED':b.phase==='won'?'VICTORY':'WITHDRAWAL')}</span><span class="battle-turn">TURN ${String(b.turn).padStart(2,'0')}</span>${team(b.allies,'allies')}${team(b.enemies,'enemies')}</div>${b.phase==='active'?'':`<div class="battle-result">${b.phase==='won'?'VICTORY':'RETREAT'}</div><p style="text-align:center">${b.phase==='won'?`${icon('coin')} ${money(b.reward)} G`:'部隊已撤回'}</p>`}`;
+    $('#battleInspector').innerHTML=(b.original&&ui.battleInspect?battleInspection(b):'')+(ui.battleError?`<p class="event-warning">戰鬥已暫停：${esc(ui.battleError)}。可先備份存檔，再重新整理。</p>`:'');
+    $('#battleLog').innerHTML=b.log.slice(0,8).map(l=>`<div>${esc(l)}</div>`).join('');
+    if($('#battleControls').dataset.content!==controls){$('#battleControls').innerHTML=controls;$('#battleControls').dataset.content=controls;}
+    $('#battleRule').textContent=b.original?'原作命中、射速、傷害、陣形與退場規則':'戰鬥試作 · 暫定規則';
   }
-  function battleInspection(b){const selected=ui.battleInspect,a=b.core[selected.side]?.[selected.index];if(!a||a.classId===-1)return '';return `<div class="battle-inspection"><strong>${esc(b.names[selected.side][selected.index])}</strong><span>生命 ${a.hp}/${a.maxHp} · 等級 ${a.level} · 攻擊 ${a.attack} · 防禦 ${a.defense}</span><span>武器威力 ${a.power} · 防護 ${a.armor} · 射速 ${a.rate} · 累積 ${a.counter}</span>${selected.side==='friendly'&&b.phase==='active'&&a.hp>0&&a.state<28?graphicButton('withdrawMember','back','個別撤退'):''}</div>`;}
+  function battleInspection(b){const selected=ui.battleInspect,a=b.core[selected.side]?.[selected.index];if(!a||a.classId===-1)return '';return `<div class="battle-inspection"><strong>${esc(b.names[selected.side][selected.index])}</strong><span>生命 ${a.hp}/${a.maxHp} · 等級 ${a.level} · 攻擊 ${a.attack} · 防禦 ${a.defense}</span><span>武器威力 ${a.power} · 防護 ${a.armor} · 射速 ${a.rate} · 累積 ${a.counter}</span></div>`;}
+  document.addEventListener('pointerdown',event=>{if(modalKind==='battle'&&event.target.closest('button'))battleInteracting=true;},true);
+  for(const name of ['pointerup','pointercancel'])document.addEventListener(name,()=>{battleInteracting=false;},true);
+  window.addEventListener('blur',()=>{battleInteracting=false;});
   // All dynamic strings from binary data or imported saves are escaped before insertion.
   document.addEventListener('click',event=>{invalidateWorld();
     const b=event.target.closest('button');if(!b||b.disabled)return;
@@ -327,8 +351,12 @@
       case 'battlePause':autoBattle=!autoBattle;renderBattle();break;
       case 'withdrawMember':{const result=E.battleCommand(state,battle,{type:'withdraw-member',index:ui.battleInspect.index});if(!result?.accepted)toast('此成員目前無法個別撤退');save(true);renderBattle();break;}
       case 'battleStep':E.battleStep(state,battle);renderBattle();save(true);render();break;
-      case 'retreat':E.finishBattle(state,battle,false);renderBattle();save(true);render();break;
-      case 'battleClose':{const finished=battle;closeModal();if(finished?.original&&state.story?.event?.type==='battle')continueStory({value:finished.core.outcome,unitBytes:Array.from(finished.core.unitBytes),encounterBytes:Array.from(finished.core.encounterBytes),randomSeed:state.seed});render();break;}
+      case 'retreat':requestRetreat();break;
+      case 'confirmBattleRetreat':requestRetreat(true);break;
+      case 'cancelBattleClose':ui.battleClosePrompt=false;autoBattle=ui.battleResumeAfterClose??true;renderBattle();break;
+      case 'reload':location.reload();break;
+      case 'resumeEvent':renderStory();break;
+      case 'battleClose':exitBattle();break;
       case 'welcomeStart':prefs.welcome=true;savePrefs();closeModal();resumeScene();break;
       case 'welcomeAtlas':prefs.welcome=true;savePrefs();closeModal();setView('atlas');break;
       case 'musicPlay':playMusic();break;
@@ -339,7 +367,7 @@
       case 'evidence':showEvidence();break;
       case 'original':original();break;
       case 'save':save();break;
-      case 'export':{const file=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),u=URL.createObjectURL(file),a=document.createElement('a');a.href=u;a.download=`highreward-web-day${state.day}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);toast('已匯出 Web 存檔。');break;}
+      case 'export':{const file=new Blob([loadError?initialRaw:JSON.stringify(state,null,2)],{type:'application/json'}),u=URL.createObjectURL(file),a=document.createElement('a');a.href=u;a.download=`highreward-web-day${state.day}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(u),2000);toast('已匯出 Web 存檔。');break;}
       case 'import':$('#importFile').click();break;
       case 'resetConfirm':openModal('<h2>重新開始戰役</h2><p>目前瀏覽器中的原生重製進度會被覆寫。可先匯出 JSON 留存。</p><div class="modal-actions"><button data-action="export">先匯出</button><button class="primary" data-action="reset">確定重新開始</button></div>','reset');break;
       case 'reset':state=E.newGame(D);ui.selected=0;ui.base=state.squads[0].at;ui.speed=0;ui.point=null;battle=null;save(true);closeModal();render();resumeScene();toast('已建立新的原作戰役。');break;
@@ -355,7 +383,7 @@
     if(e.target.id==='baseSelect'){ui.point=null;ui.base=+e.target.value;state.viewCountry=D.bases[ui.base].countryIndexCandidate;focusOnBase(ui.base);renderDesk();}
     if(e.target.id==='themeSelect'){prefs.theme=e.target.value;document.body.dataset.artwork=prefs.theme;savePrefs();imageCache.clear();render();if(ui.view==='atlas')renderAtlas();if(ui.view==='archive')renderArchive();toast('已切換美術風格。');}
   });
-  $('#importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>2*1024*1024)throw Error('存檔大小超過 2 MB');const restored=E.validateSave(JSON.parse(await f.text()),D);if(restored.mode!=='native-original')throw Error('這是舊版試作存檔；請保留備份，0.6 使用原作戰役存檔');state=restored;battle=E.restoreOriginalBattle(state);ui.point=null;ui.selected=0;ui.base=squad().at;ui.speed=0;save(true);closeModal();render();resumeScene();toast('已恢復 Web 存檔。');}catch(err){toast('無法匯入：'+err.message);}finally{e.target.value='';}});
+  $('#importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{if(f.size>2*1024*1024)throw Error('存檔大小超過 2 MB');const restored=E.validateSave(JSON.parse(await f.text()),D),restoredBattle=E.restoreOriginalBattle(restored);if(restored.mode!=='native-original')throw Error('這是舊版試作存檔；請保留備份，0.6 使用原作戰役存檔');modal.close();modalKind='';armoryUI.clear();state=restored;loadError=null;battle=restoredBattle;ui.battleClosePrompt=false;ui.battleReturnAfterRetreat=false;ui.battleInspect=null;ui.battleError='';autoBattle=true;ui.point=null;ui.selected=0;ui.base=squad().at;ui.speed=0;save(true);render();resumeScene();toast('已恢復 Web 存檔。');}catch(err){toast('無法匯入：'+err.message);}finally{e.target.value='';}});
   $('#search').addEventListener('input',e=>{ui.query=e.target.value;ui.limit=48;renderArchive();});
   $('#musicBtn').onclick=showMusic;$('#saveBtn').onclick=()=>save();$('#menuBtn').onclick=showSettings;$('#evidenceBtn').onclick=showEvidence;$('#helpBtn').onclick=showHelp;$('#originalBtn').onclick=original;$('#closeModal').onclick=closeModal;
   modal.addEventListener('cancel',e=>{e.preventDefault();closeModal();});
@@ -410,13 +438,13 @@
   $('#toggleRoutes').onclick=()=>{ui.routes=!ui.routes;$('#toggleRoutes').setAttribute('aria-pressed',String(ui.routes));$('#toggleRoutes').textContent=ui.routes?'隱藏步行路線':'預覽步行路線';};
   let previous=performance.now(),elapsed=0,saveElapsed=0;
   function frame(now){const dt=Math.min(.2,(now-previous)/1000);previous=now;
-    if(battle?.phase==='active'&&autoBattle){battleElapsed+=dt;if(battleElapsed>=(battle.original ? 0.08 : 0.8)){battleElapsed=0;E.battleStep(state,battle);renderBattle();if(battle.phase!=='active'){save(true);render();}}}
+    if(battle?.phase==='active'&&autoBattle&&!battleInteracting){battleElapsed+=dt;if(battleElapsed>=(battle.original ? 0.08 : 0.8)){battleElapsed=0;try{E.battleStep(state,battle);renderBattle();if(battle.phase!=='active'){save(true);render();if(ui.battleReturnAfterRetreat)exitBattle();}}catch(error){autoBattle=false;ui.battleError=error.message;save(true);renderBattle();}}}
     if(ui.speed&&!modal.open&&!state.ended){const tickDuration=state.mode==='native-original' ? 0.08 : 0.8;elapsed=Math.min(8*tickDuration,elapsed+dt*ui.speed);if(elapsed>=tickDuration&&!worldPending){const ticks=Math.min(8,Math.floor(elapsed/tickDuration));elapsed-=ticks*tickDuration;if(state.mode==='native-original')requestWorld(ticks);else{E.step(state,D,ticks);render();}}}
     saveElapsed+=dt;if(saveElapsed>=15){saveElapsed=0;if(!battle||battle.phase!=='active')save(true);}
     if(ui.view==='command'&&now-lastDraw>33){drawMap(now);lastDraw=now;}
     requestAnimationFrame(frame);
   }
   window.addEventListener('pagehide',()=>{invalidateWorld();worldWorker?.terminate();worldWorker=null;worldPending=false;save(true);});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden){invalidateWorld();ui.speed=0;autoBattle=false;save(true);render();}});
-  render();renderAtlas();drawMap(performance.now());requestAnimationFrame(frame);if(!prefs.welcome)showWelcome();else resumeScene();
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){invalidateWorld();ui.speed=0;autoBattle=false;battleInteracting=false;save(true);render();if(modalKind==='battle')renderBattle();}});
+  render();renderAtlas();drawMap(performance.now());requestAnimationFrame(frame);if(loadError)showLoadRecovery();else if(!prefs.welcome&&!state.story?.event)showWelcome();else resumeScene();
 })();
