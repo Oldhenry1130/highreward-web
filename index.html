@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>高報酬戰將 — HIGH REWARD · Web Remake</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="game-ui.css">
+</head>
+<body>
+  <div class="app">
+    <header class="masthead">
+      <a class="brand" href="#" aria-label="高報酬戰將首頁"><span class="sigil">HR<span>✦</span></span><div><small>HIGH REWARD</small><h1>高報酬戰將</h1></div></a>
+      <nav class="main-nav" aria-label="主選單"><button data-view="command" class="selected" aria-label="作戰指揮" title="作戰指揮"><span data-icon="sword"></span><span>征戰</span></button><button data-view="atlas" aria-label="大陸圖誌" title="大陸圖誌"><span data-icon="map"></span><span>世界</span></button><button data-view="archive" aria-label="人物與典藏" title="人物與典藏"><span data-icon="book"></span><span>圖鑑</span></button></nav>
+      <div class="header-actions"><span class="build">WEB REMAKE <b>0.3</b></span><button id="saveBtn" class="icon-only" aria-label="儲存" title="儲存進度"><span data-icon="save"></span></button><button id="helpBtn" class="icon-only" aria-label="操作說明" title="操作說明"><span data-icon="info"></span></button><button id="menuBtn" class="icon-only" aria-label="設定與說明" title="設定與存檔"><span data-icon="gear"></span></button></div>
+    </header>
+    <div class="devnote"><span class="status-dot"></span>重製開發版 · 規則仍在還原中 <button id="evidenceBtn" title="查看已還原與未驗證的內容">還原進度</button></div>
+    <section class="ledger" aria-label="傭兵團財務與時間">
+      <div class="ledger-title"><span data-icon="flag"></span><strong>傭兵團本部</strong></div>
+      <div class="metric" title="持有資金"><span data-icon="coin"></span><span class="metric-label">資金</span><strong id="money" class="gold">—</strong><small>G</small></div>
+      <div class="metric debt" title="待償債務"><span data-icon="bag"></span><span class="metric-label">債務</span><strong id="debt">—</strong><small>G</small></div>
+      <div class="metric calendar" title="戰役時間"><span data-icon="sun"></span><strong id="date">—</strong></div>
+      <div class="time-controls"><div id="speeds"><button data-speed="0" aria-label="暫停" title="暫停（空白鍵）"><span data-icon="pause"></span></button><button data-speed="1" title="正常速度"><span data-icon="play"></span></button><button data-speed="3" title="3倍速">3×</button><button data-speed="8" title="8倍速">8×</button></div></div>
+    </section>
+    <main id="commandView">
+      <section class="theatre">
+        <div class="section-heading"><div><span class="eyebrow">THE CONTINENT</span><h2>大陸戰況圖</h2></div><div class="map-tools"><button id="zoomOut" aria-label="縮小地圖" title="縮小地圖">−</button><span id="zoomLabel">100%</span><button id="zoomIn" aria-label="放大地圖" title="放大地圖">＋</button><button id="resetMap" title="還原視野" aria-label="還原視野">◎</button></div></div>
+        <div class="map-frame"><div class="map-grid"></div><canvas id="world" width="1280" height="800" aria-label="可點選據點的原作大陸地圖"></canvas><div class="map-corner tl"></div><div class="map-corner br"></div><div id="mapLabel" class="map-label">大陸全圖 <span>11 NATIONS / 99 LOCATIONS</span></div><div id="mapHint" class="map-hint">點選據點查看情報 · 滾輪縮放 · 拖曳平移</div></div>
+        <div class="map-footer"><span><i class="legend city"></i> 城市／據點</span><span><i class="legend squad"></i> 所屬部隊</span><span><i class="legend route"></i> 行軍路線</span><button id="toggleRoutes" aria-pressed="false">顯示據點連線</button></div>
+        <div class="field-feed"><span data-icon="journal"></span><span id="latestReport">等待新的軍情…</span><button data-action="journal" title="全部行動紀錄" aria-label="開啟行動紀錄">•••</button></div>
+      </section>
+      <aside class="desk"><div class="desk-head"><span class="eyebrow">COMMAND</span><span class="live">● 指揮中</span></div><div id="selectedSquad"></div><div class="tabs" role="tablist"><button data-tab="city" role="tab" aria-label="據點情報" title="城鎮與設施" aria-selected="true"><span data-icon="castle"></span><span>城鎮</span></button><button data-tab="missions" role="tab" aria-label="委託看板" title="委託看板"><span data-icon="scroll"></span><span>委託</span></button><button data-tab="troops" role="tab" aria-label="部隊整備" title="部隊與裝備"><span data-icon="shield"></span><span>整備</span></button><button data-tab="finance" role="tab" aria-label="財務" title="金庫與還款"><span data-icon="chest"></span><span>金庫</span></button></div><div id="deskContent" class="desk-content"></div></aside>
+    </main>
+    <section id="unitDeck" class="unit-deck" aria-label="所屬部隊"><div class="squad-strip-heading"><h2>傭兵部隊 <small>Ⅰ — Ⅵ</small></h2><span>1–6 切換部隊 · SPACE 暫停</span></div><div id="squads" class="squads"></div></section>
+    <section class="dispatch-log" hidden><div id="log"></div></section>
+    <section id="atlasView" class="other-view" hidden><div class="page-heading"><span class="eyebrow">A WORLD REMEMBERED</span><h2>大陸圖誌</h2><p>循著原作的十一幅國家地圖，重新認識這片大陸。</p></div><div id="atlas" class="atlas-grid"></div></section>
+    <section id="archiveView" class="other-view" hidden><div class="page-heading"><span class="eyebrow">THE ORIGINAL COLLECTION</span><h2>人物與典藏</h2><p>原版頭像、兵種、裝備與文字。每項資料都能回溯到遊戲檔案。</p></div><div class="archive-toolbar"><div id="archiveTabs"><button data-archive="characters" class="selected">人物與兵種</button><button data-archive="items">裝備</button><button data-archive="art">美術素材</button><button data-archive="text">原版文字</button></div><input id="search" type="search" placeholder="搜尋名稱、文字或資源 ID…" aria-label="搜尋典藏"></div><div id="archiveResults"></div></section>
+    <footer class="site-footer"><span>HIGH REWARD <i>／</i> 一場尚未結束的傭兵之旅。</span><div><button id="originalBtn" hidden>原版對照 ↗</button><span>WEB EDITION</span></div></footer>
+  </div>
+  <dialog id="modal"><button id="closeModal" class="modal-close" aria-label="關閉">×</button><div id="modalContent"></div></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <input id="importFile" type="file" accept="application/json,.json" hidden>
+  <script>window.HR_RELEASE={"online": true, "artworkComplete": true, "artworkReviewed": 595, "artworkTotal": 595};</script><script src="data/game-data.js"></script><script src="data/redrawn-assets.js"></script><script src="engine.js"></script><script src="ui-art.js"></script><script src="app.js"></script>
+</body>
+</html>
