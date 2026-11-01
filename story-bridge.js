@@ -1,8 +1,8 @@
 /* Synchronize original event execution with the native campaign and game UI. */
 (function(root,factory){
-  if(typeof module==='object'&&module.exports)module.exports=factory(require('./original-story.js'),require('./original-transport.js'),require('./battle-bridge.js'),require('./original-campaign.js'),require('./economy.js'));
-  else root.OriginalStoryBridge=factory(root.HR_ORIGINAL_STORY,root.OriginalTransport,root.OriginalBattleBridge,root.OriginalCampaign,root.HREconomy);
-})(typeof globalThis==='undefined'?this:globalThis,function(Story,Transport,Battle,Campaign,Economy){
+  if(typeof module==='object'&&module.exports)module.exports=factory(require('./original-story.js'),require('./original-transport.js'),require('./battle-bridge.js'),require('./original-campaign.js'),require('./economy.js'),require('./world-intel.js'));
+  else root.OriginalStoryBridge=factory(root.HR_ORIGINAL_STORY,root.OriginalTransport,root.OriginalBattleBridge,root.OriginalCampaign,root.HREconomy,root.HRWorldIntel);
+})(typeof globalThis==='undefined'?this:globalThis,function(Story,Transport,Battle,Campaign,Economy,Intel){
   'use strict';
   const clone=v=>JSON.parse(JSON.stringify(v));
   const text=bytes=>new TextDecoder('big5').decode(Uint8Array.from(bytes).subarray(0,bytes.indexOf(0)<0?bytes.length:bytes.indexOf(0))).trim();
@@ -55,7 +55,7 @@
   }
   function commit(s,data,vm,event){
     const before={money:s.money,ledger:s.ledger?.slice()};
-    fromVM(s,data,vm.nativeState());s.story??={history:[]};s.story.snapshot=vm.snapshot();s.story.event=event;s.story.eventSerial=(s.story.eventSerial||0)+1;
+    const native=vm.nativeState();Intel.capture(s,data,event,native,!!vm.worldBreak||!!event.worldFrames);fromVM(s,data,native);s.story??={history:[]};s.story.snapshot=vm.snapshot();s.story.event=event;s.story.eventSerial=(s.story.eventSerial||0)+1;
     const receipt=Economy.incomeReceipt(before,s,s.story.eventSerial);
     if(receipt){s.story.incomeReceipt=receipt;s.log??=[];s.log.unshift({day:s.day,text:Economy.receiptText(receipt)});s.log=s.log.slice(0,80);}
     if(event.type==='complete'&&event.ending?.id==='debtCleared')s.ended='won';

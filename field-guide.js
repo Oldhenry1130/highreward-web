@@ -1,5 +1,5 @@
 /* Read-only item and town information, based on shipped records and recovered rules. */
-(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(id=>require('./original-combat.js').originalData.items[id]);else root.HRFieldGuide=factory(id=>root.OriginalCombat?.originalData.items[id]);})(typeof globalThis==='object'?globalThis:this,function(originalItem){
+(function(root,factory){if(typeof module==='object'&&module.exports)module.exports=factory(id=>require('./original-combat.js').originalData.items[id],require('./world-intel.js'));else root.HRFieldGuide=factory(id=>root.OriginalCombat?.originalData.items[id],root.HRWorldIntel);})(typeof globalThis==='object'?globalThis:this,function(originalItem,Intel){
   'use strict';
   const categories={0:'補給品',1:'手槍',2:'步槍',3:'機槍',4:'重型槍械',5:'輕鎧',6:'鎧甲',7:'重鎧',8:'公演皇冠',9:'公演飾物',10:'商業持物',11:'工事工具'};
   function item(data,id){
@@ -20,10 +20,10 @@
     const b=data.bases[id];if(!b)return null;
     const raw=state.world?.bases[id]||data.original?.transport.bases[id],q=state.squads[state.selectedSquad]||state.squads[0];
     const stationed=state.squads.filter(p=>p.active!==0&&engine.atBase(p)&&p.at===id);
-    const local=stationed.find(p=>p.id===q.id)||stationed[0];let services=[];if(local){try{services=engine.townActions(state,data,local.id).actions.map(a=>a.label.trim());}catch{}}
+    const local=stationed.find(p=>p.id===q.id)||stationed[0];let services=[];if(local&&Intel.baseStatus(state,data,id).canEnter){try{services=engine.townActions(state,data,local.id).actions.map(a=>a.label.trim());}catch{}}
     const vehicles=engine.vehiclesAt(data,id).map(s=>({shop:s.name,...data.original.transport.vehicles.find(v=>v.kind===s.kind&&v.typeId===s.typeId)}));
     const origin=engine.position(q,data),routes=[0,1,2].map(mode=>{const plan=engine.routePlan(data,origin,b,mode,state);return {mode,cells:plan?plan.cells.length-1:null};});
-    return {id,name:b.name,country:data.countries[b.countryIndexCandidate]?.name||'未知國家',x:b.xCandidate,y:b.yCandidate,kind:raw?.kind,durability:raw?.raw1A,maxDurability:raw?.raw1C,blocked:raw?.kind===3,flightRestricted:!!raw?.state5D,services,visited:!!local,shops:b.shopRecords.map(s=>s.name.trim()),vehicles,stationed:stationed.map(p=>({id:p.id,name:p.name,members:p.members.length})),routes};
+    return {status:Intel.baseStatus(state,data,id),id,name:b.name,country:data.countries[b.countryIndexCandidate]?.name||'未知國家',x:b.xCandidate,y:b.yCandidate,kind:raw?.kind,durability:raw?.raw1A,maxDurability:raw?.raw1C,blocked:raw?.kind===3,flightRestricted:!!raw?.state5D,services,visited:!!local,shops:b.shopRecords.map(s=>s.name.trim()),vehicles,stationed:stationed.map(p=>({id:p.id,name:p.name,members:p.members.length})),routes};
   }
   return Object.freeze({item,town,categories});
 });
