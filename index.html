@@ -4,19 +4,19 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>高報酬戰將 — HIGH REWARD · Web Remake</title>
-  <link rel="stylesheet" href="style.css?v=0.8.6">
-  <link rel="stylesheet" href="game-ui.css?v=0.8.6">
-  <link rel="stylesheet" href="field-guide.css?v=0.8.6">
-  <link rel="stylesheet" href="battle-art.css?v=0.8.6">
-  <link rel="stylesheet" href="formation-ui.css?v=0.8.6">
-  <link rel="stylesheet" href="character-art.css?v=0.8.6">
+  <link rel="stylesheet" href="style.css?v=0.8.7">
+  <link rel="stylesheet" href="game-ui.css?v=0.8.7">
+  <link rel="stylesheet" href="field-guide.css?v=0.8.7">
+  <link rel="stylesheet" href="battle-art.css?v=0.8.7">
+  <link rel="stylesheet" href="formation-ui.css?v=0.8.7">
+  <link rel="stylesheet" href="character-art.css?v=0.8.7">
 <script>window.HR_RELEASE={"online": true, "artworkComplete": true, "artworkReviewed": 595, "artworkTotal": 595, "characterArtworkComplete": true, "characterArtworkReviewed": 84, "characterArtworkTotal": 84};</script></head>
 <body>
   <div class="app">
     <header class="masthead">
       <a class="brand" href="#" aria-label="高報酬戰將首頁"><span class="sigil">HR<span>✦</span></span><div><small>HIGH REWARD</small><h1>高報酬戰將</h1></div></a>
       <nav class="main-nav" aria-label="主選單"><button data-view="command" class="selected" aria-label="作戰指揮" title="作戰指揮"><span data-icon="sword"></span><span>征戰</span></button><button data-view="atlas" aria-label="大陸圖誌" title="大陸圖誌"><span data-icon="map"></span><span>世界</span></button><button data-view="archive" aria-label="人物與典藏" title="人物與典藏"><span data-icon="book"></span><span>圖鑑</span></button></nav>
-      <div class="header-actions"><span class="build">WEB REMAKE <b>0.8.6</b></span><button id="musicBtn" class="icon-only" aria-label="原作音樂" title="原作音樂"><span data-icon="music"></span></button><button id="saveBtn" class="icon-only" aria-label="儲存" title="儲存進度"><span data-icon="save"></span></button><button id="helpBtn" class="icon-only" aria-label="操作說明" title="操作說明"><span data-icon="info"></span></button><button id="menuBtn" class="icon-only" aria-label="設定與說明" title="設定與存檔"><span data-icon="gear"></span></button></div>
+      <div class="header-actions"><span class="build">WEB REMAKE <b>0.8.7</b></span><button id="musicBtn" class="icon-only" aria-label="原作音樂" title="原作音樂"><span data-icon="music"></span></button><button id="saveBtn" class="icon-only" aria-label="儲存" title="儲存進度"><span data-icon="save"></span></button><button id="helpBtn" class="icon-only" aria-label="操作說明" title="操作說明"><span data-icon="info"></span></button><button id="menuBtn" class="icon-only" aria-label="設定與說明" title="設定與存檔"><span data-icon="gear"></span></button></div>
     </header>
     <div class="devnote"><span class="status-dot"></span>原作戰役 · 六隊協同征戰 · 收益 ×5 <button id="resumeEventBtn" data-action="resumeEvent" hidden>繼續目前事件</button><button id="evidenceBtn" title="查看原作還原與驗證範圍">還原進度</button></div>
     <section class="ledger" aria-label="傭兵團財務與時間">
@@ -29,8 +29,8 @@
     <main id="commandView">
       <section class="theatre">
         <div class="section-heading"><div><span class="eyebrow">THE CONTINENT</span><h2>大陸戰況圖</h2></div><div class="map-tools"><button id="zoomOut" aria-label="縮小地圖" title="縮小地圖">−</button><span id="zoomLabel">100%</span><button id="zoomIn" aria-label="放大地圖" title="放大地圖">＋</button><button id="resetMap" title="還原視野" aria-label="還原視野">◎</button></div></div>
-        <div class="map-frame"><div class="map-grid"></div><canvas id="world" width="1280" height="800" aria-label="可點選據點的原作大陸地圖"></canvas><div id="worldEventBeacons" class="world-event-layer"></div><div id="missionBeacon" class="mission-beacon" hidden role="status"><span></span></div><div class="map-corner tl"></div><div class="map-corner br"></div><div id="mapLabel" class="map-label">大陸全圖 <span>11 NATIONS / 99 LOCATIONS</span></div><div id="mapHint" class="map-hint">點選據點或空白處下達行軍 · 滾輪縮放 · 拖曳平移</div></div>
-        <div class="map-footer"><span><i class="legend city"></i> 城市／據點</span><span class="legend-hostile">! 敵對／交戰</span><span class="legend-blocked">× 封鎖</span><span class="legend-special">◆ 特殊據點</span><span><i class="legend squad"></i> 所屬部隊</span><span><i class="legend route"></i> 行軍路線</span><button id="toggleRoutes" aria-pressed="false">預覽步行路線</button></div>
+        <div class="map-frame"><div class="map-grid"></div><canvas id="world" width="1280" height="800" aria-label="可點選據點的原作大陸地圖"></canvas><div id="worldAirfields" class="map-airfield-layer" aria-label="飛行起降點"></div><div id="worldEventBeacons" class="world-event-layer"></div><div id="missionBeacon" class="mission-beacon" hidden role="status"><span></span></div><div class="map-corner tl"></div><div class="map-corner br"></div><div id="mapLabel" class="map-label">大陸全圖 <span>11 NATIONS / 99 LOCATIONS</span></div><div id="mapHint" class="map-hint">點選據點或空白處下達行軍 · 滾輪縮放 · 拖曳平移</div></div>
+        <div class="map-footer"><span><i class="legend city"></i> 城市／據點</span><span class="legend-hostile">! 敵對／交戰</span><span class="legend-blocked">× 封鎖</span><span class="legend-special">◆ 特殊據點</span><span class="legend-airfield">✈ 起降點（斜線：受限）</span><span><i class="legend squad"></i> 所屬部隊</span><span><i class="legend route"></i> 行軍路線</span><button id="toggleRoutes" aria-pressed="false">預覽步行路線</button></div>
         <div class="field-feed"><span data-icon="journal"></span><span id="latestReport">等待新的軍情…</span><button data-action="journal" title="全部行動紀錄" aria-label="開啟行動紀錄">•••</button></div>
       </section>
       <aside class="desk"><div class="desk-head"><span class="eyebrow">COMMAND</span><span class="live">● 指揮中</span></div><div id="selectedSquad"></div><div class="tabs" role="tablist"><button data-tab="city" role="tab" aria-label="據點情報" title="城鎮與設施" aria-selected="true"><span data-icon="castle"></span><span>城鎮</span></button><button data-tab="missions" role="tab" aria-label="委託看板" title="委託看板"><span data-icon="scroll"></span><span>委託</span></button><button data-tab="troops" role="tab" aria-label="部隊整備" title="部隊與裝備"><span data-icon="shield"></span><span>整備</span></button><button data-tab="finance" role="tab" aria-label="財務" title="金庫與還款"><span data-icon="chest"></span><span>金庫</span></button></div><div id="deskContent" class="desk-content"></div></aside>
@@ -46,6 +46,6 @@
   <dialog id="guideModal" aria-label="遊戲情報"><button id="closeGuide" class="modal-close" aria-label="關閉情報">×</button><div id="guideContent"></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
   <input id="importFile" type="file" accept="application/json,.json" hidden>
-  <script src="data/game-data.js?v=0.8.6"></script><script src="data/redrawn-assets.js?v=0.8.6"></script><script src="data/original-data.js?v=0.8.6"></script><script src="character-art-data.js?v=0.8.6"></script><script src="character-art.js?v=0.8.6"></script><script src="heraldry.js?v=0.8.6"></script><script src="world-intel.js?v=0.8.6"></script><script src="field-guide.js?v=0.8.6"></script><script src="battle-art.js?v=0.8.6"></script><script src="economy.js?v=0.8.6"></script><script src="original-transport.js?v=0.8.6"></script><script src="original-combat.js?v=0.8.6"></script><script src="original-campaign.js?v=0.8.6"></script><script src="battle-bridge.js?v=0.8.6"></script><script src="original-story.js?v=0.8.6"></script><script src="story-bridge.js?v=0.8.6"></script><script src="original-contracts.js?v=0.8.6"></script><script src="original-ending.js?v=0.8.6"></script><script src="original-music.js?v=0.8.6"></script><script src="armory.js?v=0.8.6"></script><script src="engine.js?v=0.8.6"></script><script src="ui-art.js?v=0.8.6"></script><script src="armory-ui.js?v=0.8.6"></script><script src="formation-ui.js?v=0.8.6"></script><script src="app.js?v=0.8.6"></script>
+  <script src="data/game-data.js?v=0.8.7"></script><script src="data/redrawn-assets.js?v=0.8.7"></script><script src="data/original-data.js?v=0.8.7"></script><script src="character-art-data.js?v=0.8.7"></script><script src="character-art.js?v=0.8.7"></script><script src="heraldry.js?v=0.8.7"></script><script src="world-intel.js?v=0.8.7"></script><script src="field-guide.js?v=0.8.7"></script><script src="battle-art.js?v=0.8.7"></script><script src="economy.js?v=0.8.7"></script><script src="original-transport.js?v=0.8.7"></script><script src="original-combat.js?v=0.8.7"></script><script src="original-campaign.js?v=0.8.7"></script><script src="battle-bridge.js?v=0.8.7"></script><script src="original-story.js?v=0.8.7"></script><script src="story-bridge.js?v=0.8.7"></script><script src="original-contracts.js?v=0.8.7"></script><script src="original-ending.js?v=0.8.7"></script><script src="original-music.js?v=0.8.7"></script><script src="armory.js?v=0.8.7"></script><script src="engine.js?v=0.8.7"></script><script src="ui-art.js?v=0.8.7"></script><script src="armory-ui.js?v=0.8.7"></script><script src="formation-ui.js?v=0.8.7"></script><script src="app.js?v=0.8.7"></script>
 </body>
 </html>

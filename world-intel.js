@@ -4,6 +4,11 @@
   const normal=s=>String(s||'').replace(/[\s‧•・·]/g,'');
   const finitePoint=p=>p&&Number.isFinite(p.x)&&Number.isFinite(p.y)&&p.x>=0&&p.x<128&&p.y>=0&&p.y<96;
   const definitions={0:['open','可進入','◇','#82d9ac','可進入據點；抵達並駐留後確認當下店家。'],1:['open','可進入','◇','#82d9ac','可進入據點；抵達並駐留後確認當下店家。'],2:['hostile','敵對／交戰據點','⚔','#ff7c77','需先處理戰鬥或占領，無法直接進城採購。'],3:['blocked','要道封鎖','×','#ffbc66','此處與周邊通路封鎖，暫時不能進城採購。'],4:['special','特殊據點','◆','#87cbff','洞窟、渡場等特殊據點；可用服務依原作事件開放。'],5:['hidden','尚未開放','?','#99a3a2','尚未在目前劇情中開放。']};
+  function flightSite(s,data,id){
+    const current=s.world?.bases,original=data.original?.transport?.bases,b=current?.find(b=>b.id===id)||original?.find(b=>b.id===id);
+    const known=!!b&&Number.isInteger(b.state5D),marked=known&&b.state5D===0&&[0,1,2,3].includes(b.kind),restricted=marked&&[2,3].includes(b.kind);
+    return {marked,restricted,known,label:marked?(restricted?'起降點 · 目前受限':'飛行起降點'):known?'無一般起降點':'起降資料未明',detail:marked?(restricted?'此處有起降點，但目前敵對或封鎖，不能作一般起飛點。':'此處可作一般起降點；仍須自備飛機，並確認出發地與航路。'):known?'此處沒有供一般移動使用的起降點；特殊戰鬥飛行另依原作條件判定。':'目前無法確認此處的起降資格。'};
+  }
   function baseStatus(s,data,id){
     const current=s.world?.bases,original=data.original?.transport?.bases,b=(current?.[id]?.id===id?current[id]:current?.find(b=>b.id===id))||(original?.[id]?.id===id?original[id]:original?.find(b=>b.id===id)),kind=b?.kind;
 
@@ -50,5 +55,5 @@
     if(pending&&(e.type==='battle'||world)){const locs=(Array.isArray(e.mapLocations)?e.mapLocations:locate(s,data,e,null,world)).filter(finitePoint);if(locs.length){const key=result[0]?.locations.some(p=>locs.some(l=>l.x===p.x&&l.y===p.y))?result[0].key:'pending-event';return [{key,title:e.type==='battle'?'突發戰鬥':'目前事件',locations:locs,pending:true},...result.filter(n=>n.key!==key)].slice(0,8);}}
     return result;
   }
-  return Object.freeze({baseStatus,basePoint,partyPoint,mentionedBases,locate,capture,notices});
+  return Object.freeze({baseStatus,flightSite,basePoint,partyPoint,mentionedBases,locate,capture,notices});
 });
