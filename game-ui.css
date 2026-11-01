@@ -58,6 +58,13 @@ dialog{background:linear-gradient(135deg,#3c4b3a,#1b2f25 80%);border:3px solid #
 .vehicle-shop strong{color:#f1dfaf;font-size:15px}.vehicle-shop b{color:#edc980;font-size:13px}
 .vehicle-shop button{display:flex;align-items:center;justify-content:center;gap:7px;padding:7px;background:#4b5f42;color:#f4e2ac;border:1px solid #9b9c6a;border-radius:6px}
 .vehicle-shop button svg{width:26px;height:26px}.vehicle-shop button:disabled{opacity:.4}
+.vehicle-owned>img.vehicle-illustration{width:105px;height:42px;object-fit:contain;flex:0 0 105px}
+.vehicle-shop{grid-template-columns:minmax(0,1fr)}
+.vehicle-shop>img.vehicle-illustration{width:100%;height:auto;max-height:150px;object-fit:contain;justify-self:center}
+.vehicle-offer-preview{display:grid;grid-template-columns:minmax(0,1fr) 180px;align-items:center;gap:14px;margin:14px 0;padding:12px;background:#13291f;border:1px solid #a8965d66;border-radius:6px;text-align:center}
+.vehicle-offer-preview>img.vehicle-illustration{display:block;width:100%;height:auto;max-height:180px;object-fit:contain}
+.vehicle-offer-preview h3{margin:10px 0 4px}
+@media(max-width:600px){.vehicle-offer-preview{grid-template-columns:minmax(0,1fr);gap:2px}.vehicle-offer-preview>img.vehicle-illustration{max-height:140px}}
 .formation{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 .formation button{min-width:0!important;display:grid;justify-items:center;padding:5px!important;font-size:11px}
 .formation button>svg{width:100%;height:55px;background:#233c31;border-radius:4px}
