@@ -57,7 +57,7 @@
     function drop(x,target){
       if(!target)return false;const p=+target.dataset.party,slot=+target.dataset.slot;
       try{
-        a.invalidate();
+        a.takeover?.(x.party,p);a.invalidate();
         if(target.dataset.dropKind==='member'){
           if(x.kind==='person'){if(x.party===p&&x.slot===slot){selection=null;refresh();return true;}E.command(state(),D,{type:'transfer',kind:'person',squad:x.party,fromSlot:x.slot,target:p,toSlot:slot});}
           else if(x.kind==='stock')E.manageStock(state(),D,{type:'equipStock',squad:p,fromSquad:x.party,slot,item:x.item});
@@ -79,7 +79,7 @@
       if(!event.target.closest('[data-armory-action],.visual-company,.pack-panel,.armory-tabs,.company-chips,.shop-catalog,.native-shop-categories,.drag-guide'))return;
       if(suppressClick){event.preventDefault();event.stopImmediatePropagation();suppressClick=false;return;}
       const b=event.target.closest('[data-armory-action]');
-      if(b&&!b.disabled){event.preventDefault();event.stopImmediatePropagation();a.invalidate();try{switch(b.dataset.armoryAction){
+      if(b&&!b.disabled){event.preventDefault();event.stopImmediatePropagation();a.invalidate();if(['vehicle','restock','buy','sell'].includes(b.dataset.armoryAction))a.takeover?.(party,...(b.dataset.armoryAction==='vehicle'?[peer]:[]));try{switch(b.dataset.armoryAction){
         case 'party':party=+b.dataset.party;supplyReport=null;manager();break;case 'peer':peer=+b.dataset.party;manager();break;
         case 'mode':view=b.dataset.mode;selection=null;manager();break;
         case 'vehicle':E.command(state(),D,{type:'transfer',kind:b.dataset.kind,squad:party,target:peer});committed();a.toast('載具移交完成');break;

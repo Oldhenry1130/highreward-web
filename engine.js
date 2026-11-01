@@ -10,6 +10,7 @@
   const Combat=typeof module!=='undefined'&&module.exports?require('./original-combat.js'):scope.OriginalCombat;
   const BattleBridge=typeof module!=='undefined'&&module.exports?require('./battle-bridge.js'):scope.OriginalBattleBridge;
   const StoryBridge=typeof module!=='undefined'&&module.exports?require('./story-bridge.js'):scope.OriginalStoryBridge;
+  const Auto=typeof module!=='undefined'&&module.exports?require('./auto-commissions.js'):scope.HRAutoCommissions;
   const clone = value => JSON.parse(JSON.stringify(value));
   const dist = (a,b) => Math.hypot(a.xCandidate-b.xCandidate,a.yCandidate-b.yCandidate);
   function rng(s) {s.seed=(Math.imul(s.seed,1664525)+1013904223)>>>0;return s.seed/4294967296;}
@@ -171,6 +172,8 @@
   }
   function worldContinuationSpeed(s,preferred=1){
     if(s.ended||s.activeBattle?.phase==='active'||s.story?.event&&!['complete','tick-complete'].includes(s.story.event.type))return 0;
+    if(s.automation&&!s.automation.running&&s.automation.teams.some(t=>t.enabled))return 0;
+    if(Auto?.wantsClock(s))return [1,3,8].includes(preferred)?preferred:1;
     return s.squads.some(q=>q.active!==0&&([0,1,3,6,9].includes(q.originalOrder)||q.originalOrder===2&&q.subtype>0||q.order==='move'))?([1,3,8].includes(preferred)?preferred:1):0;
   }
   function stepOriginal(s,data,ticks=1){
@@ -384,6 +387,7 @@
     if(value.ended!==null&&!['won','quit'].includes(value.ended))throw Error('戰役狀態無效');
     if(value.clock&&(!Number.isInteger(value.clock.subtick)||value.clock.subtick<0||value.clock.subtick>250||!Number.isInteger(value.clock.hour)||value.clock.hour<0||value.clock.hour>25))throw Error('原作時鐘無效');
     if(value.ledger&&(!Array.isArray(value.ledger)||value.ledger.length!==96||value.ledger.some(n=>!Number.isSafeInteger(n)||n<0||n>0xffffffff)))throw Error('原作帳目無效');
+    if(value.automation!==undefined)Auto.validate(value.automation,data);
     if(value.activeBattle)BattleBridge.validateSnapshot(value.activeBattle);
     if(value.cheatsUsed!==undefined&&(!Number.isSafeInteger(value.cheatsUsed)||value.cheatsUsed<0))throw Error('密技紀錄無效');
     if(value.mode==='native-original'){StoryBridge.validate(value,data);Economy.configure(value);}
