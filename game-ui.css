@@ -147,3 +147,5 @@ dialog[data-kind="armory"],dialog[data-kind="story"]:has(.purchase-layout){width
 
 .world-event-area{margin-top:14px}.world-event-area[hidden]{display:none}
 @media(max-width:680px){.unit-deck{position:static;margin-top:14px;border:1px solid #8b805755;border-radius:5px;padding:8px}.app{padding-bottom:20px}.world-event-area{margin-top:12px}}
+@media(min-width:681px){main{align-items:stretch}.desk{align-self:stretch}.theatre{display:flex;flex-direction:column}.theatre>.section-heading,.theatre>.map-footer,.theatre>.field-feed{flex-shrink:0}.theatre>.map-frame{flex:1 1 0;height:0;min-height:clamp(385px,53vh,650px)}}
+@media(min-width:681px) and (max-width:1000px){.theatre>.map-frame{min-height:488px}}
