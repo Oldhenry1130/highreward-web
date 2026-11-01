@@ -11,7 +11,7 @@
   if(!prefs.artworkVersion){prefs.theme='redrawn';prefs.artworkVersion=3;try{localStorage.setItem(PREF,JSON.stringify(prefs));}catch{}}
   if(window.HR_RELEASE?.online||!['hd','hd-ai','redrawn'].includes(prefs.theme))prefs.theme='redrawn';
   document.body.dataset.artwork=prefs.theme;
-  let state,loadError=null,initialRaw=null;try{initialRaw=localStorage.getItem(KEY)||localStorage.getItem('highreward.native.v3');if(initialRaw){try{if(!localStorage.getItem(KEY+'.before-0.8.7'))localStorage.setItem(KEY+'.before-0.8.7',initialRaw);}catch{}}state=E.validateSave(JSON.parse(initialRaw||'null'),D);}catch(error){loadError=initialRaw?error.message:null;state=E.newGame(D);}
+  let state,loadError=null,initialRaw=null;try{initialRaw=localStorage.getItem(KEY)||localStorage.getItem('highreward.native.v3');if(initialRaw){try{if(!localStorage.getItem(KEY+'.before-0.8.8'))localStorage.setItem(KEY+'.before-0.8.8',initialRaw);}catch{}}state=E.validateSave(JSON.parse(initialRaw||'null'),D);}catch(error){loadError=initialRaw?error.message:null;state=E.newGame(D);}
   try{if(!loadError&&!localStorage.getItem(KEY))localStorage.setItem(KEY,JSON.stringify(state));}catch{}
   const preferredSquad=state.story?.event?.type==='battle'?state.activeBattle?.squad:state.selectedSquad;
   const initialSquad=Number.isInteger(preferredSquad)&&preferredSquad>=0&&preferredSquad<6?preferredSquad:0;
@@ -22,7 +22,7 @@
   function requestWorld(ticks){
     if(worldPending)return;
     if(!worldWorker){
-      worldWorker=new Worker('world-worker.js?v=0.8.7');
+      worldWorker=new Worker('world-worker.js?v=0.8.8');
       worldWorker.onmessage=({data})=>{worldPending=false;if(data.generation!==worldGeneration)return;if(data.error){ui.speed=0;toast('世界運算已暫停：'+data.error);render();return;}const previousBase=state.squads[ui.selected].at,viewCountry=state.viewCountry;const preserveCountry=viewCountry!==worldRequestView?.country;state=data.state;state.selectedSquad=ui.selected;if(preserveCountry)state.viewCountry=viewCountry;if(!ui.point&&ui.base===previousBase&&state.squads[ui.selected].at!==previousBase){ui.base=state.squads[ui.selected].at;state.viewCountry=D.bases[ui.base].countryIndexCandidate;}render();if(state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type)){ui.worldResumeSpeed=ui.speed||ui.worldResumeSpeed||1;save(true);renderStory();}};
       worldWorker.onerror=()=>{worldPending=false;ui.speed=0;worldWorker.terminate();worldWorker=null;toast('背景運算載入失敗，請重新整理後繼續。');render();};
     }
@@ -89,7 +89,7 @@
       }openModal('','battle');renderBattle();return;
     }
     if(e.name==='shop.grid'){renderOriginalShop(e);return;}
-    const speaker=e.title||state.story.speaker||'傭兵團',face=state.story.speakerFace,speakerId=C.speakerClass(face,speaker),faceImage=speakerId!==null?faceHTML(speakerId,speaker,'story-portrait'):Number.isInteger(face)&&asset('FACE.MRG:'+face)?`<img class="story-portrait" src="${esc(url('FACE.MRG:'+face))}" alt="${esc(speaker)}">`:`<span class="story-portrait story-silhouette">${icon('people')}</span>`;
+    const speaker=e.title||state.story.speaker||'傭兵團',face=state.story.speakerFace,speakerId=C.speakerClass(face,speaker),related=C.relatedParty(e,state.squads,speaker),faceImage=speakerId!==null?faceHTML(speakerId,speaker,'story-portrait'):Number.isInteger(face)&&asset('FACE.MRG:'+face)?`<img class="story-portrait" src="${esc(url('FACE.MRG:'+face))}" alt="${esc(speaker)}">`:related?faceHTML(related.classId,related.label,'story-portrait'):'';
     const choices=e.options||[],history=state.story.history.slice(-4),options=choices.map(o=>{
       const label=Economy.rewardText(o.text??(o.classId===-1?'空位 '+(o.id+1):'替換 '+(className(o.classId)||'成員')+' · 位置 '+(o.id+1)),/報酬/.test(e.title||''));
       return `<button class="story-choice" data-story-value="${o.id}" ${e.type==='selection'&&o.classId!==-1?'data-story-replace="true"':''}>${icon(storyIcon(label))}<span>${esc(label)}</span></button>`;

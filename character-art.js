@@ -24,6 +24,16 @@
       const partial=records.filter(r=>normalize(r.name).length>=3&&n.length>=2&&(normalize(r.name).startsWith(n)||normalize(r.name).endsWith(n)||n.startsWith(normalize(r.name))));if(partial.length===1)return partial[0].id;}
     const matches=records.filter(r=>r.sourceSpriteId===face);return matches.length===1?matches[0].id:null;
   }
+  function relatedParty(event,squads,speaker=''){
+    const clean=v=>normalize(v).normalize('NFKC');
+    if(!['','傭兵團','部隊','旁白','事件','軍情'].includes(clean(speaker)))return null;
+    const text=clean(event?.lines?.join('\n')||event?.text||''),parties=Array.isArray(squads)?squads:[];
+    const mentioned=parties.filter(q=>[q.name,q.leader].some(n=>clean(n).length>=2&&text.includes(clean(n)))).map(q=>q.id);
+    const explicit=[event?.partyId,...(event?.mapLocations||[]).map(p=>p.partyId)].filter(id=>Number.isInteger(id)&&parties.some(q=>q.id===id));
+    const ids=[...new Set([...mentioned,...explicit])];if(ids.length!==1)return null;
+    const q=parties.find(q=>q.id===ids[0]),classId=speakerClass(null,q.leader);
+    return classId===null?null:{partyId:q.id,classId,label:'事件相關部隊：'+q.name+' · '+q.leader};
+  }
   function hydrate(root){
     if(typeof document==='undefined')return;
     const load=svg=>{const img=svg.querySelector('image[data-character-src]');if(!img)return;const src=img.getAttribute('data-character-src');img.setAttribute('href',src);img.removeAttribute('data-character-src');loaded.add(src);};
@@ -47,5 +57,5 @@
     }
     for(const[key,node]of pool)if(!seen.has(key)){node.remove();pool.delete(key);}
   }
-  return Object.freeze({get,name,pose,frame,image,setPose,speakerClass,hydrate,rekey,updateActors,records:data?.records||[]});
+  return Object.freeze({get,name,pose,frame,image,setPose,speakerClass,relatedParty,hydrate,rekey,updateActors,records:data?.records||[]});
 });
