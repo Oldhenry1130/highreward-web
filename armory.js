@@ -42,6 +42,32 @@
     const q=s.squads[party];if(!q)throw Error('部隊不存在');ready(s,q,true);const m=member(q,slot);if(!['weapon','armor','consumable'].includes(key)||m[key]==null)throw Error('這個欄位沒有裝備');
     const id=m[key],amount=key==='consumable'?m.consumableCount||1:1;change(q,id,amount);m[key]=null;if(key==='consumable')m.consumableCount=0;return{id,amount};
   }
+  const isMedicine=id=>Number.isInteger(id)&&id>=40&&id<=47;
+  function restockPlan(s,data,party,id,target=1){
+    const q=s.squads[party];if(!q)throw Error('部隊不存在');ready(s,q,true);
+    if(!isMedicine(id)||!data.items.some(i=>i.index===id))throw Error('請選擇回復膠囊或復原藥');
+    if(!Number.isInteger(target)||target<1||target>255)throw Error('每人補給數量須為 1–255');
+    const stock=count(q,id),recipients=[],skipped={heldOther:0,unavailable:0,full:0};
+    for(const [index,m]of q.members.entries()){
+      if(m.hp<=0||!compatible(data,id,m)){skipped.unavailable++;continue;}
+      if(m.consumable!=null&&m.consumable!==id){skipped.heldOther++;continue;}
+      const before=m.consumable===id?m.consumableCount||0:0;
+      if(before>=target){skipped.full++;continue;}
+      recipients.push({slot:m.originalSlot??index,name:m.name,before,add:0});
+    }
+    recipients.sort((a,b)=>a.slot-b.slot);
+    const needed=recipients.reduce((n,r)=>n+target-r.before,0);let remaining=stock;
+    // Fill the lowest quantities first, so scarce medicine reaches several people.
+    for(let level=1;level<=target&&remaining;level++)for(const r of recipients)if(r.before+r.add<level&&remaining){r.add++;remaining--;}
+    return {itemId:id,target,stock,needed,used:stock-remaining,remaining,shortage:Math.max(0,needed-stock),recipients,skipped};
+  }
+  function restock(s,data,party,id,target=1){
+    const plan=restockPlan(s,data,party,id,target);
+    if(!plan.used)throw Error(plan.needed?'倉庫沒有可分配的藥品':'適用成員已足量，或正持有其他物品');
+    const q=s.squads[party];change(q,id,-plan.used);
+    for(const r of plan.recipients)if(r.add){const m=member(q,r.slot);m.consumable=id;m.consumableCount=r.before+r.add;}
+    return plan;
+  }
   function moveStock(s,data,fromParty,toParty,id){
     const a=s.squads[fromParty],b=s.squads[toParty];if(!a||!b)throw Error('部隊不存在');ready(s,a,true);ready(s,b,true);if(fromParty===toParty)return;
     if((a.currentBase??a.at)!==(b.currentBase??b.at))throw Error('兩支部隊必須駐留在同一據點');if(count(a,id)<1||!slotOf(id))throw Error('倉庫中沒有此物品');if(count(b,id)>=MAX_STACK)throw Error('接收倉庫數量已滿');change(a,id,-1);change(b,id,1);
@@ -55,5 +81,5 @@
     const income=price*quantity;if(s.money+income>CASH_LIMIT)throw Error('持有金額已達上限，請先使用資金');change(q,id,-quantity);s.money+=income;ledger(s,party,income);return {income,quantity};
   }
   function cheat(s){if(s.ended)throw Error('戰役已結束');if(s.money+50000>CASH_LIMIT)throw Error('持有金額接近原作上限，無法再增加 50,000 G');s.money+=50000;s.cheatsUsed=(s.cheatsUsed||0)+1;return 50000;}
-  return Object.freeze({MAX_STACK,CASH_LIMIT,slotOf,count,validate,ready,compatible,purchase,equip,unequip,moveStock,sell,cheat});
+  return Object.freeze({MAX_STACK,CASH_LIMIT,slotOf,count,validate,ready,compatible,purchase,equip,unequip,isMedicine,restockPlan,restock,moveStock,sell,cheat});
 });

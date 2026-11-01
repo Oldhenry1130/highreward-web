@@ -120,6 +120,7 @@
     switch(action.type){
       case 'purchaseStock':result=Armory.purchase(s,data,q.id,action.offer,action.quantity??1);record(s,`${q.name}購入${data.items[result.itemId].name} × ${result.quantity}，已收入部隊倉庫，支出 ${result.cost} G。`);break;
       case 'equipStock':result=Armory.equip(s,data,action.fromSquad??q.id,q.id,action.slot,action.item);break;
+      case 'restockMedicine':result=Armory.restock(s,data,q.id,action.item,action.target??1);record(s,`${q.name}補給${data.items[result.itemId].name}：${result.recipients.filter(r=>r.add).length} 人共 ${result.used} 件，倉庫剩餘 ${result.remaining} 件。`);break;
       case 'unequipStock':result=Armory.unequip(s,data,q.id,action.slot,action.key);break;
       case 'moveStock':result=Armory.moveStock(s,data,q.id,action.target,action.item);break;
       case 'sellStock':result=Armory.sell(s,data,q.id,action.item,action.quantity??1);record(s,`${q.name}出售倉庫物品，收入 ${result.income} G。`);break;
@@ -167,6 +168,10 @@
       });
     }
     return s;
+  }
+  function worldContinuationSpeed(s,preferred=1){
+    if(s.ended||s.activeBattle?.phase==='active'||s.story?.event&&!['complete','tick-complete'].includes(s.story.event.type))return 0;
+    return s.squads.some(q=>q.active!==0&&([0,1,3,6,9].includes(q.originalOrder)||q.originalOrder===2&&q.subtype>0||q.order==='move'))?([1,3,8].includes(preferred)?preferred:1):0;
   }
   function stepOriginal(s,data,ticks=1){
     if(s.ended||s.activeBattle?.phase==='active')return s;
@@ -442,6 +447,6 @@
   function battleCommand(s,b,input){const result=BattleBridge.command(b,input);s.activeBattle=BattleBridge.snapshot(b);return result;}
   function townActions(s,data,partyId){return StoryBridge.townActions(s,data,partyId);}
   function countryAt(s,x,y){return StoryBridge.countryAt(s,x,y);}
-  const api={VERSION,newGame,route,routePlan,movementGrid,position,atBase,transportUnit,movementOptions,commandAvailability,vehiclesAt,equipmentStats,offers,step,command,manageStock,cheatMoney,beginBattle,beginOriginalBattle,restoreOriginalBattle,recoverDefeatedCompany,battleStep,finishBattle,battleCommand,storyEvent,storyResume,townActions,countryAt,validateSave,clone};
+  const api={VERSION,newGame,route,routePlan,movementGrid,position,atBase,transportUnit,movementOptions,commandAvailability,vehiclesAt,equipmentStats,offers,step,worldContinuationSpeed,command,manageStock,cheatMoney,beginBattle,beginOriginalBattle,restoreOriginalBattle,recoverDefeatedCompany,battleStep,finishBattle,battleCommand,storyEvent,storyResume,townActions,countryAt,validateSave,clone};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else scope.HREngine=api;
 })(typeof window==='undefined'?globalThis:window);
