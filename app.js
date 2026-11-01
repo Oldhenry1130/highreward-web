@@ -11,7 +11,7 @@
   if(!prefs.artworkVersion){prefs.theme='redrawn';prefs.artworkVersion=3;try{localStorage.setItem(PREF,JSON.stringify(prefs));}catch{}}
   if(window.HR_RELEASE?.online||!['hd','hd-ai','redrawn'].includes(prefs.theme))prefs.theme='redrawn';
   document.body.dataset.artwork=prefs.theme;
-  let state,loadError=null,initialRaw=null;try{initialRaw=localStorage.getItem(KEY)||localStorage.getItem('highreward.native.v3');if(initialRaw){try{if(!localStorage.getItem(KEY+'.before-0.8.3'))localStorage.setItem(KEY+'.before-0.8.3',initialRaw);}catch{}}state=E.validateSave(JSON.parse(initialRaw||'null'),D);}catch(error){loadError=initialRaw?error.message:null;state=E.newGame(D);}
+  let state,loadError=null,initialRaw=null;try{initialRaw=localStorage.getItem(KEY)||localStorage.getItem('highreward.native.v3');if(initialRaw){try{if(!localStorage.getItem(KEY+'.before-0.8.4'))localStorage.setItem(KEY+'.before-0.8.4',initialRaw);}catch{}}state=E.validateSave(JSON.parse(initialRaw||'null'),D);}catch(error){loadError=initialRaw?error.message:null;state=E.newGame(D);}
   try{if(!loadError&&!localStorage.getItem(KEY))localStorage.setItem(KEY,JSON.stringify(state));}catch{}
   const preferredSquad=state.story?.event?.type==='battle'?state.activeBattle?.squad:state.selectedSquad;
   const initialSquad=Number.isInteger(preferredSquad)&&preferredSquad>=0&&preferredSquad<6?preferredSquad:0;
@@ -22,7 +22,7 @@
   function requestWorld(ticks){
     if(worldPending)return;
     if(!worldWorker){
-      worldWorker=new Worker('world-worker.js?v=0.8.3');
+      worldWorker=new Worker('world-worker.js?v=0.8.4');
       worldWorker.onmessage=({data})=>{worldPending=false;if(data.generation!==worldGeneration)return;if(data.error){ui.speed=0;toast('世界運算已暫停：'+data.error);render();return;}const previousBase=state.squads[ui.selected].at,viewCountry=state.viewCountry;const preserveCountry=viewCountry!==worldRequestView?.country;state=data.state;state.selectedSquad=ui.selected;if(preserveCountry)state.viewCountry=viewCountry;if(!ui.point&&ui.base===previousBase&&state.squads[ui.selected].at!==previousBase){ui.base=state.squads[ui.selected].at;state.viewCountry=D.bases[ui.base].countryIndexCandidate;}render();if(state.story?.event&&!['complete','tick-complete'].includes(state.story.event.type)){ui.worldResumeSpeed=ui.speed||ui.worldResumeSpeed||1;save(true);renderStory();}};
       worldWorker.onerror=()=>{worldPending=false;ui.speed=0;worldWorker.terminate();worldWorker=null;toast('背景運算載入失敗，請重新整理後繼續。');render();};
     }
@@ -170,7 +170,7 @@
     const list=W.notices(state,D);if(ui.newestEventKey!==list[0]?.key){ui.newestEventKey=list[0]?.key;ui.eventNoticeIndex=0;}const n=list[ui.eventNoticeIndex||0]||list[0],panel=$('#worldEventPanel'),layer=$('#worldEventBeacons');
     if(n&&ui.lastEventKey!==n.key){ui.lastEventKey=n.key;ui.eventFlashUntil=performance.now()+15000;if(n.pending){const p=n.locations[0];ui.zoom=Math.max(1.4,ui.zoom);$('#zoomLabel').textContent=Math.round(ui.zoom*100)+'%';focusOnPoint(p);}}
     const html=list.length?`<strong>${icon('map')}事件定位</strong><div class="world-event-list">${list.map((entry,i)=>`<article><b>${esc(entry.title)}${entry.pending?' · 處理中':''}</b>${entry.locations.map((p,j)=>`<button data-map-notice="${i}" data-map-location="${j}">${esc(p.label)}${p.evidence==='mentioned'?' · 文中提及':''}<span>定位 ↗</span></button>`).join('')}</article>`).join('')}</div>${list.some(x=>x.pending)?'<button data-action="resumeEvent">返回目前事件</button>':''}`:'';
-    panel.hidden=!list.length;if(panel.dataset.content!==html){panel.innerHTML=html;panel.dataset.content=html;}
+    $('#worldEventArea').hidden=ui.view!=='command'||!list.length;panel.hidden=!list.length;if(panel.dataset.content!==html){panel.innerHTML=html;panel.dataset.content=html;}
     const pins=n?n.locations.map((p,i)=>`<button class="world-event-beacon" data-map-notice="${Math.max(0,list.indexOf(n))}" data-map-location="${i}" aria-label="事件位置 ${esc(p.label)}"><b>!</b><span>${esc(p.label)}</span></button>`).join(''):'';
     if(layer.dataset.content!==pins){layer.innerHTML=pins;layer.dataset.content=pins;}
     $('#worldEventSummary').textContent=n?n.title+'：'+n.locations.map(p=>p.label).join('、'):'';
@@ -238,7 +238,7 @@
     if(state.mode==='native-original')$('#deskContent').insertAdjacentHTML('beforeend',nativeTasks(q));
     window.HRUI.decorate();
   }
-  function setView(view){ui.view=view;$('#commandView').hidden=view!=='command';$('#atlasView').hidden=view!=='atlas';$('#archiveView').hidden=view!=='archive';$('#unitDeck').hidden=view!=='command';$$('.main-nav button').forEach(b=>b.classList.toggle('selected',b.dataset.view===view));if(view==='atlas')renderAtlas();if(view==='archive')renderArchive();}
+  function setView(view){ui.view=view;$('#commandView').hidden=view!=='command';$('#atlasView').hidden=view!=='atlas';$('#archiveView').hidden=view!=='archive';$('#unitDeck').hidden=view!=='command';$('#worldEventArea').hidden=view!=='command'||!W.notices(state,D).length;$$('.main-nav button').forEach(b=>b.classList.toggle('selected',b.dataset.view===view));if(view==='atlas')renderAtlas();if(view==='archive')renderArchive();}
   function renderAtlas(){
     $('#atlas').innerHTML=D.countries.map(c=>`<button class="atlas-card" data-country="${c.index}">${img('MAP'+String(c.index+1).padStart(2,'0')+'.PXZ','',c.name+'地圖')}<div class="atlas-copy"><span class="eyebrow">NATION ${String(c.index+1).padStart(2,'0')} · ${(c.baseIndicesCandidate||[]).length} LOCATIONS</span><h3>${esc(c.name)}</h3><p>${esc(c.text.replace(c.name,'').trim()).slice(0,100)}…</p></div></button>`).join('');
   }
